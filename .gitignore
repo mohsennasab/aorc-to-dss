@@ -1,0 +1,51 @@
+# Private project inputs
+private/
+
+# Local notes and assistant working files
+AI*.md
+ai*.md
+*_handoff.md
+*_memory.md
+.codex/
+.claude/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+build/
+dist-service/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Release packages
+release/
+*.zip
+*.exe
+*.msi
+
+# Runtime data
+.aorctodss/
+cache/
+logs/
+outputs/
+*.dss
+*.tif
+*.tiff
+*.zarr/
+*.parquet
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

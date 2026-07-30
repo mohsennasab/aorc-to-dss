@@ -1,0 +1,2 @@
+# Installed into the packaged processing service
+-e .

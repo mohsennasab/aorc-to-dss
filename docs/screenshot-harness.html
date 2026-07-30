@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AORCtoDSS workbench preview</title>
+  <link rel="stylesheet" href="../geolibre-plugin/dist/style.css">
+  <style>
+    html, body { width: 100%; height: 100%; margin: 0; font-family: system-ui, sans-serif; color: #172b3a; }
+    body { display: grid; grid-template-rows: 48px 1fr 26px; background: #eef2f3; }
+    header { display: flex; align-items: center; gap: 24px; padding: 0 17px; color: white; background: #173c54; }
+    header strong { font-size: 18px; }
+    header nav { display: flex; gap: 18px; font-size: 13px; }
+    .layout { display: grid; grid-template-columns: 230px 1fr 520px; min-height: 0; }
+    .layers { padding: 15px; border-right: 1px solid #cbd4d9; background: white; }
+    .layers h2 { margin: 0 0 15px; font-size: 15px; }
+    .layers div { padding: 8px; margin: 4px 0; border-radius: 4px; background: #f2f5f6; }
+    .map { position: relative; overflow: hidden; background: #d7e8e2; }
+    .map::before { content: ""; position: absolute; inset: -80px; opacity: 0.7; background: repeating-linear-gradient(37deg, transparent 0 42px, #b7d2c8 43px 45px), repeating-linear-gradient(-28deg, transparent 0 67px, #c5d9b9 68px 70px); }
+    .river { position: absolute; left: 8%; top: 15%; width: 85%; height: 60%; border: 12px solid transparent; border-bottom-color: #5da8ca; border-radius: 50%; transform: rotate(-17deg); }
+    .basin { position: absolute; left: 24%; top: 24%; width: 48%; height: 50%; border: 3px solid #087aa6; background: rgba(8, 122, 166, 0.18); clip-path: polygon(10% 25%, 43% 0, 92% 20%, 100% 63%, 62% 100%, 18% 84%, 0 52%); }
+    .map-label { position: absolute; left: 44%; top: 48%; padding: 4px 8px; border-radius: 3px; background: rgba(255,255,255,0.85); font-size: 12px; }
+    .panel { min-width: 0; min-height: 0; border-left: 1px solid #cbd4d9; background: white; overflow: hidden; }
+    footer { padding: 4px 12px; border-top: 1px solid #cbd4d9; background: white; font-size: 11px; }
+    .control { position: absolute; right: 8px; top: 8px; z-index: 5; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>GeoLibre</strong>
+    <nav><span>Project</span><span>Data</span><span>Processing</span><span>AORCtoDSS</span><span>Help</span></nav>
+  </header>
+  <div class="layout">
+    <aside class="layers">
+      <h2>Layers</h2>
+      <div>☑ OpenFreeMap</div>
+      <div>☑ Watershed boundary</div>
+      <div>☑ AORC event summary</div>
+    </aside>
+    <section class="map">
+      <div class="river"></div>
+      <div class="basin"></div>
+      <span class="map-label">Upper Tennessee watershed</span>
+      <div class="control"></div>
+    </section>
+    <aside class="panel" id="panel"></aside>
+  </div>
+  <footer>EPSG:3857  |  Scale 1:420,000  |  GeoLibre 2.4</footer>
+  <script type="module">
+    import plugin from "../geolibre-plugin/dist/index.js"
+
+    const source = { setData() {} }
+    const map = {
+      on() {},
+      off() {},
+      once(_event, callback) { callback() },
+      getSource() { return source },
+      addSource() {},
+      removeSource() {},
+      getLayer() { return undefined },
+      addLayer() {},
+      removeLayer() {},
+      queryRenderedFeatures() { return [] },
+      getCanvas() { return document.querySelector(".map") }
+    }
+    let renderPanel = null
+    let mounted = false
+    const app = {
+      getMap() { return map },
+      fitBounds() {},
+      addGeoJsonLayer() { return "layer" },
+      registerRightPanel(panel) {
+        renderPanel = panel.render
+        return () => {}
+      },
+      openRightPanel() {
+        if (!mounted && renderPanel) {
+          renderPanel(document.querySelector("#panel"))
+          mounted = true
+        }
+        return true
+      },
+      closeRightPanel() {},
+      registerToolbarMenu() { return () => {} },
+      addMapControl(control) {
+        document.querySelector(".control").append(control.onAdd(map))
+        return true
+      },
+      removeMapControl() {},
+      exportTextFile() {}
+    }
+    plugin.activate(app)
+  </script>
+</body>
+</html>
