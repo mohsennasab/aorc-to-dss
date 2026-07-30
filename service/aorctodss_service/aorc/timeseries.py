@@ -33,12 +33,19 @@ def average_dataarray(
     """Calculate a weighted series from an already opened AORC window."""
 
     cancel = cancel or Event()
+
+    def weight_progress(value: float, message: str) -> None:
+        if progress:
+            progress(value * 0.3, message)
+
     weights = polygon_weights(
         geometry,
         np.asarray(grid.latitude.values),
         np.asarray(grid.longitude.values),
         method,
         weights_cache,
+        cancel,
+        weight_progress,
     ).weights
     if cancel.is_set():
         raise CancelledError("Time-series calculation was cancelled")
@@ -63,6 +70,8 @@ def average_dataarray(
 
     completed_tasks = 0
     total_tasks = 1
+    if progress:
+        progress(0.3, f"Calculating watershed averages for {count} hours")
 
     def start(dsk: dict[object, object]) -> None:
         nonlocal total_tasks
@@ -87,7 +96,7 @@ def average_dataarray(
         completed_tasks += 1
         if progress and (completed_tasks % 20 == 0 or completed_tasks == total_tasks):
             progress(
-                completed_tasks / total_tasks,
+                0.3 + (completed_tasks / total_tasks) * 0.7,
                 f"Calculating watershed averages for {count} hours",
             )
 
@@ -131,6 +140,11 @@ def watershed_timeseries(
 
     cancel = cancel or Event()
     metadata = catalog.variable(variable)
+
+    def archive_progress(value: float, message: str) -> None:
+        if progress:
+            progress(value * 0.2, message)
+
     grid = open_aorc_window(
         catalog,
         variable,
@@ -138,8 +152,13 @@ def watershed_timeseries(
         end,
         geometry.bounds,
         cancel,
-        progress,
+        archive_progress,
     )
+
+    def calculation_progress(value: float, message: str) -> None:
+        if progress:
+            progress(0.2 + value * 0.8, message)
+
     points = average_dataarray(
         grid,
         geometry,
@@ -148,7 +167,7 @@ def watershed_timeseries(
         method,
         weights_cache,
         cancel,
-        progress,
+        calculation_progress,
     )
     if len(points) != grid.sizes["time"]:
         raise ArchiveError("The time-series result has an unexpected length")

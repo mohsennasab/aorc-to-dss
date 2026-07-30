@@ -2,10 +2,12 @@
 
 *.dss binary
 *.exe binary
+*.gif binary
 *.gpkg binary
 *.ico binary
 *.jpg binary
 *.jpeg binary
+*.mp4 binary
 *.parquet binary
 *.png binary
 *.tif binary

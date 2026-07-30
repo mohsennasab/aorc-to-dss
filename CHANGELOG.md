@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.7
+
+- Show archive, polygon weighting, and hourly averaging as separate progress phases
+- Keep the progress bar below 100 percent until the time series is complete
+- Skip polygon intersections for AORC cells that are fully inside or outside the study area
+- Report area-weight row-block progress for large or detailed watershed boundaries
+- Allow cancellation while area weights are being calculated
+
 ## 0.1.6
 
 - Create Time Slider animations only from an explicit Step 4 download button

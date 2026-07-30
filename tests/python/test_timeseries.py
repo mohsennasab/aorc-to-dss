@@ -26,16 +26,22 @@ def sample_data() -> xr.DataArray:
 
 
 def test_average_renormalizes_missing_cells() -> None:
+    updates: list[tuple[float, str]] = []
     points = average_dataarray(
         sample_data(),
         box(0, 0, 2, 2),
         -32767,
         "mm",
         "cell-center",
+        progress=lambda value, message: updates.append((value, message)),
     )
     assert points[0].value == 4
     assert np.isclose(points[1].value, 13 / 3)
     assert points[1].quality == "partial"
+    assert [value for value, _message in updates] == sorted(
+        value for value, _message in updates
+    )
+    assert updates[-1][0] == 1
 
 
 def test_cancel_is_honored() -> None:

@@ -3,6 +3,10 @@
 AORCtoDSS is a GeoLibre plugin for preparing NOAA Analysis of Record for
 Calibration data for HEC-HMS and other HEC applications.
 
+> **Development status:** AORCtoDSS is under development. Processing methods,
+> interfaces, and release packaging may change. Review the validation report
+> and confirm the results before using an output in a model.
+
 The plugin can:
 
 - Read AORC data for a selected polygon and time period
@@ -18,7 +22,7 @@ The plugin can:
 The source repository is
 [mohsennasab/aorc-to-dss](https://github.com/mohsennasab/aorc-to-dss).
 
-![AORCtoDSS workbench](docs/images/aorctodss-workbench.png)
+![AORCtoDSS workbench](docs/images/workbench.gif)
 
 ## GeoLibre user guide
 
@@ -65,7 +69,7 @@ Use this option when the processing service is already installed or is running
 from source.
 
 1. Open **Settings > Manage Plugins > Install from file** in GeoLibre.
-2. Select `AORCtoDSS-plugin-0.1.6.zip`.
+2. Select `AORCtoDSS-plugin-0.1.7.zip`.
 3. Restart GeoLibre.
 4. Activate **AORCtoDSS** from the Plugins menu.
 
@@ -128,6 +132,11 @@ Choose an averaging method:
   polygon.
 
 Select **Run analysis** to calculate the watershed-average series.
+
+The progress bar separates the NOAA archive read, polygon weighting, and
+hourly averaging. A detailed watershed boundary can take longer during the
+first area-weighted run. The calculated weights are cached and reused when the
+same study area and AORC grid window are analyzed again.
 
 The chart supports:
 
@@ -548,7 +557,7 @@ files, memory files, and Markdown files. Inspect the archive before publishing:
 
 ```powershell
 npm run package:plugin
-tar -tf .\release\AORCtoDSS-plugin-0.1.6.zip
+tar -tf .\release\AORCtoDSS-plugin-0.1.7.zip
 ```
 
 The plugin archive should contain:

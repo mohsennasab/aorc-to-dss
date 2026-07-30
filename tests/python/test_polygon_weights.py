@@ -35,6 +35,25 @@ def test_area_weights_reflect_partial_cells() -> None:
     assert weights.weights[:, 0].sum() > weights.weights[:, 1].sum()
 
 
+def test_area_weight_progress_is_monotonic() -> None:
+    latitudes = np.arange(0.5, 65.5)
+    longitudes = np.array([0.5, 1.5])
+    updates: list[tuple[float, str]] = []
+    weights = polygon_weights(
+        box(0, 0, 1.5, 65),
+        latitudes,
+        longitudes,
+        "area-weighted",
+        progress=lambda value, message: updates.append((value, message)),
+    )
+    values = [value for value, _message in updates]
+    assert np.isclose(weights.weights.sum(), 1)
+    assert values == sorted(values)
+    assert values[0] == 0
+    assert values[-1] == 1
+    assert any("row blocks" in message for _value, message in updates)
+
+
 def test_weights_are_reused_from_cache(tmp_path: Path) -> None:
     latitudes = np.array([0.5, 1.5])
     longitudes = np.array([0.5, 1.5])

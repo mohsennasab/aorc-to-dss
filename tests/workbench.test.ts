@@ -33,7 +33,7 @@ describe("AORC workbench startup", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
       const body = url.endsWith("/health")
-        ? { status: "ok", version: "0.1.6", dss: { available: true, message: "ready" } }
+        ? { status: "ok", version: "0.1.7", dss: { available: true, message: "ready" } }
         : metadata
       return {
         ok: true,
@@ -70,7 +70,7 @@ describe("AORC workbench startup", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
       const body = url.endsWith("/health")
-        ? { status: "ok", version: "0.1.6", dss: { available: true, message: "ready" } }
+        ? { status: "ok", version: "0.1.7", dss: { available: true, message: "ready" } }
         : url.endsWith("/animations")
           ? {
               id: "animation-1",
