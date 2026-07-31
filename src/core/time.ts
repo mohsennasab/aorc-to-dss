@@ -18,3 +18,11 @@ export function durationEvent(start: string, hours: number): { start: string; en
     end: new Date(startDate.getTime() + hours * 3_600_000).toISOString()
   }
 }
+
+export function isWholeUtcHour(value: Date | string): boolean {
+  const date = new Date(value)
+  return !Number.isNaN(date.getTime()) &&
+    date.getUTCMinutes() === 0 &&
+    date.getUTCSeconds() === 0 &&
+    date.getUTCMilliseconds() === 0
+}

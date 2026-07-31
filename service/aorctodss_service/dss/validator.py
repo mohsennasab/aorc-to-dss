@@ -12,6 +12,16 @@ from .adapter import HecDssAdapter
 from .pathname import DSSPathname
 
 
+def _weighted_mean(values: np.ndarray, weights: np.ndarray) -> float:
+    """Calculate a mean over the valid portion of normalized AOI weights."""
+
+    valid = np.isfinite(values) & (values > -3.0e38) & (weights > 0)
+    valid_weight = float(weights[valid].sum())
+    if valid_weight <= 0:
+        return float("nan")
+    return float(np.sum(values[valid] * weights[valid]) / valid_weight)
+
+
 def _parse_dss_time(value: str) -> datetime:
     if value.upper().endswith(":2400"):
         date_part = value[:-5]
@@ -32,6 +42,7 @@ def validate_dss(
     expected_end: datetime,
     source_means: list[float],
     projected_means: list[float],
+    validation_weights: np.ndarray,
 ) -> list[ValidationItem]:
     """Reopen a file and validate record count, metadata, time, and values."""
 
@@ -102,7 +113,11 @@ def validate_dss(
                     all_null.append(pathname)
                     readback_means.append(float("nan"))
                 else:
-                    readback_means.append(float(values[valid].mean()))
+                    # DSS stores row zero at the southern edge, while the
+                    # reprojection array and its weights are north-up.
+                    readback_means.append(
+                        _weighted_mean(values, np.flipud(validation_weights))
+                    )
                 problems = adapter.validate_grid_record(pathname, grid, units)
                 if problems:
                     metadata_problems[pathname] = problems
@@ -124,15 +139,41 @@ def validate_dss(
                     {"pathnames": all_null},
                 )
             )
-            differences = []
+            differences: list[dict[str, float]] = []
             for source, projected, readback in zip(source_means, projected_means, readback_means):
-                denominator = max(abs(source), 1.0e-6)
+                if not all(np.isfinite(value) for value in (source, projected, readback)):
+                    continue
+                source_to_projected_absolute = abs(projected - source)
+                projected_to_dss_absolute = abs(readback - projected)
                 differences.append(
                     {
-                        "source_to_projected_percent": abs(projected - source) / denominator * 100,
-                        "projected_to_dss_percent": abs(readback - projected) / max(abs(projected), 1.0e-6) * 100,
+                        "source_aoi_mean": source,
+                        "projected_aoi_mean": projected,
+                        "dss_aoi_mean": readback,
+                        "source_to_projected_absolute": source_to_projected_absolute,
+                        "source_to_projected_percent": (
+                            source_to_projected_absolute / max(abs(source), 1.0e-6) * 100
+                        ),
+                        "projected_to_dss_absolute": projected_to_dss_absolute,
+                        "projected_to_dss_percent": (
+                            projected_to_dss_absolute
+                            / max(abs(projected), 1.0e-6)
+                            * 100
+                        ),
                     }
                 )
+            source_total = float(
+                np.sum([value for value in source_means if np.isfinite(value)])
+            )
+            projected_total = float(
+                np.sum([value for value in projected_means if np.isfinite(value)])
+            )
+            event_absolute = abs(projected_total - source_total)
+            event_percent = event_absolute / max(abs(source_total), 1.0e-6) * 100
+            max_source_absolute = max(
+                (item["source_to_projected_absolute"] for item in differences),
+                default=0,
+            )
             max_source_difference = max(
                 (item["source_to_projected_percent"] for item in differences),
                 default=0,
@@ -144,14 +185,34 @@ def validate_dss(
             status = "pass"
             if max_dss_difference > 0.01:
                 status = "failure"
-            elif max_source_difference > 5:
+            elif event_percent > 5:
                 status = "warning"
             checks.append(
                 ValidationItem(
                     "Value preservation",
                     status,
-                    f"Maximum reprojection mean difference {max_source_difference:.3f}% and DSS read-back difference {max_dss_difference:.6f}%",
-                    {"hourly_differences": differences},
+                    (
+                        f"Event-total area-weighted difference {event_absolute:.6f} "
+                        f"{units} ({event_percent:.3f}%); maximum hourly absolute "
+                        f"difference {max_source_absolute:.6f} {units}; DSS "
+                        f"read-back difference {max_dss_difference:.6f}%"
+                    ),
+                    {
+                        "comparison": (
+                            "Area-weighted AOI means before and after reprojection"
+                        ),
+                        "units": units,
+                        "event_total": {
+                            "source_aoi_mean_sum": source_total,
+                            "projected_aoi_mean_sum": projected_total,
+                            "absolute_difference": event_absolute,
+                            "percent_difference": event_percent,
+                        },
+                        "maximum_hourly_absolute_difference": max_source_absolute,
+                        "maximum_hourly_percent_difference": max_source_difference,
+                        "maximum_dss_readback_percent_difference": max_dss_difference,
+                        "hourly_differences": differences,
+                    },
                 )
             )
     except Exception as exc:

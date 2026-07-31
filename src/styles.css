@@ -6,6 +6,8 @@
   --a2d-text-muted: hsl(var(--muted-foreground, 215 12% 42%));
   --a2d-surface: hsl(var(--background, 0 0% 100%));
   --a2d-chart-bg: hsl(var(--background, 0 0% 100%));
+  --a2d-tan: #d2b48c;
+  --a2d-camel: #c19a6b;
   box-sizing: border-box;
   color: hsl(var(--foreground, 215 28% 17%));
   background: var(--a2d-surface);
@@ -97,7 +99,10 @@
 
 .a2d-tabs {
   display: flex;
-  overflow-x: auto;
+  justify-content: space-around;
+  gap: 5px;
+  overflow-x: hidden;
+  padding: 9px 10px;
   border-bottom: 1px solid var(--a2d-border);
   background: var(--a2d-muted)
 }
@@ -105,30 +110,37 @@
 .a2d-tabs button {
   display: grid;
   place-items: center;
-  gap: 1px;
-  min-width: 76px;
-  padding: 6px 7px;
+  flex: 1 1 0;
+  min-width: 38px;
+  padding: 2px;
   border: 0;
-  border-bottom: 3px solid transparent;
   background: transparent;
-  color: var(--a2d-text-muted);
-  font-size: 11px
+  color: #5f452d
 }
 
 .a2d-tabs button span {
   display: grid;
   place-items: center;
-  width: 19px;
-  height: 19px;
-  border: 1px solid currentColor;
+  width: 36px;
+  height: 36px;
+  border: 2px solid rgba(95, 69, 45, 0.28);
   border-radius: 50%;
-  font-size: 10px
+  background: var(--a2d-tan);
+  box-shadow: 0 2px 5px rgba(54, 38, 23, 0.18);
+  font-size: 16px;
+  font-weight: 750;
+  transition: transform 140ms ease, background 140ms ease, box-shadow 140ms ease
 }
 
 .a2d-tabs button.active {
-  color: var(--a2d-primary);
-  border-bottom-color: var(--a2d-primary);
-  background: var(--a2d-surface)
+  color: #3c2918;
+  background: transparent
+}
+
+.a2d-tabs button.active span {
+  background: var(--a2d-camel);
+  box-shadow: 0 0 0 3px var(--a2d-surface), 0 0 0 5px var(--a2d-camel);
+  transform: scale(1.06)
 }
 
 .a2d-pages {
@@ -456,7 +468,67 @@
 
 .a2d-launcher img {
   width: 22px;
-  height: 22px
+  height: 22px;
+  border-radius: 4px;
+  object-fit: cover
+}
+
+.a2d-animation-legend {
+  margin: 10px 0 12px;
+  padding: 10px;
+  border: 1px solid var(--a2d-border);
+  border-radius: 5px;
+  background: var(--a2d-surface)
+}
+
+.a2d-animation-legend strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px
+}
+
+.a2d-rainfall-gradient {
+  width: 100%;
+  height: 13px;
+  border: 1px solid rgba(20, 28, 35, 0.35);
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    #171c8f 0%,
+    #0066ff 15%,
+    #00d9e8 30%,
+    #20bf55 45%,
+    #f2e85c 60%,
+    #ff7a00 72%,
+    #e31a1c 84%,
+    #d51b8a 93%,
+    #ffb6d9 100%
+  )
+}
+
+.a2d-animation-legend-values,
+.a2d-rainfall-values {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums
+}
+
+.a2d-rainfall-legend {
+  width: 230px;
+  padding: 9px 10px;
+  color: #18212a;
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: 5px;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.28);
+  font: 11px/1.3 system-ui, sans-serif
+}
+
+.a2d-rainfall-legend strong {
+  display: block;
+  margin-bottom: 5px
 }
 
 @media (max-width: 520px) {

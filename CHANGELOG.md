@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.8
+
+- Use `all_touched=True` source clipping with nearest-neighbor SHG reprojection
+- Calculate DSS lower-left indices by flooring the minimum projected pixel-center coordinates
+- Use area-weighted averaging as the single AOI time-series method
+- Require event boundaries to fall exactly on UTC hours
+- Compare source, projected, and DSS values with the same area-weighted AOI footprint
+- Report absolute, percentage, and event-total differences during DSS validation
+- Style the event-summary COG with the radar precipitation palette and transparent zero and NoData pixels
+- Add an on-map rainfall color scale and synchronize a red event-chart marker with Time Slider playback
+- Replace the plugin SVG with the new PNG icon
+- Simplify the workflow navigation to large Tan and Camel step numbers
+- Refresh the README workbench animation
+- Add developer and project-support links
+
 ## 0.1.7
 
 - Show archive, polygon weighting, and hourly averaging as separate progress phases

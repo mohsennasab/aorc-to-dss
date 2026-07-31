@@ -105,7 +105,7 @@ class JobManager:
                 payload["variable"],
                 parse_utc(payload["start"]),
                 parse_utc(payload["end"]),
-                payload.get("averaging_method", "area-weighted"),
+                "area-weighted",
                 (
                     Path(payload["cache_dir"]) / "weights"
                     if payload.get("cache_dir")

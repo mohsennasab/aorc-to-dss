@@ -78,7 +78,7 @@ VARIABLE_HINTS: dict[str, dict[str, Any]] = {
 
 
 def _request(url: str, timeout: int = 60) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "AORCtoDSS/0.1.7"})
+    request = urllib.request.Request(url, headers={"User-Agent": "AORCtoDSS/0.1.8"})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.read()

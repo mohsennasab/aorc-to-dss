@@ -10,7 +10,7 @@ import { AORCWorkbench } from "./ui/workbench"
 
 const PLUGIN_ID = "aorctodss"
 const PANEL_ID = "aorctodss-workbench"
-const ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%2318344a' d='M3 24 12 7l5 9 4-6 8 14z'/%3E%3Cpath fill='%23168dc0' d='M2 24c5-3 9-3 14 0s8 3 14 0v5H2z'/%3E%3C/svg%3E"
+const ICON = new URL("../geolibre-plugin/icons/aorctodss.png", import.meta.url).href
 
 class LauncherControl implements MapControl {
   private container: HTMLElement | null = null
@@ -63,7 +63,7 @@ function validState(value: unknown): value is Partial<PluginState> {
 export const plugin: GeoLibrePlugin = {
   id: PLUGIN_ID,
   name: "AORCtoDSS",
-  version: "0.1.7",
+  version: "0.1.8",
   activate(app: GeoLibreAppAPI) {
     const open = () => {
       if (!app.openRightPanel?.(PANEL_ID)) {
@@ -94,6 +94,11 @@ export const plugin: GeoLibrePlugin = {
           id: "aorctodss-docs",
           label: "AORC data source",
           onSelect: () => app.openExternalUrl?.("https://registry.opendata.aws/noaa-nws-aorc/")
+        },
+        {
+          id: "aorctodss-developer",
+          label: "Developer website",
+          onSelect: () => app.openExternalUrl?.("https://hydromohsen.com/")
         }
       ]
     }) ?? null

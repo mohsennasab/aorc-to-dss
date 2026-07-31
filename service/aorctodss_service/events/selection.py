@@ -33,6 +33,13 @@ def custom_event(start: str, end: str) -> EventWindow:
     end_time = parse_utc(end)
     if end_time <= start_time:
         raise AORCToDSSError("Event end must be later than event start")
+    if any(
+        value.minute or value.second or value.microsecond
+        for value in (start_time, end_time)
+    ):
+        raise AORCToDSSError(
+            "Event start and end must use whole UTC hours with minutes set to 00"
+        )
     if (end_time - start_time).total_seconds() % 3600:
-        raise AORCToDSSError("Event start and end must fall on whole UTC hours")
+        raise AORCToDSSError("Event duration must be a whole number of hours")
     return EventWindow(start_time, end_time)

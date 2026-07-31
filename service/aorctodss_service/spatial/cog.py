@@ -22,6 +22,7 @@ def write_cog(
     units: str,
     statistic: str,
     transparent_zero: bool = False,
+    colormap: str | None = None,
 ) -> Path:
     """Write a tiled GeoTIFF and build overview levels."""
 
@@ -41,7 +42,7 @@ def write_cog(
         "compress": "DEFLATE",
         "predictor": 3,
         "blocksize": 512,
-        "overview_resampling": "average",
+        "overview_resampling": "nearest",
     }
     stored = np.where(np.isfinite(array), array, -9999).astype(np.float32)
     with rasterio.open(path, "w", **profile) as dataset:
@@ -50,7 +51,10 @@ def write_cog(
             1,
             units=units,
             statistic=statistic,
-            aorctodss_mask="AOI cell-center mask",
+            aorctodss_mask="AORC source clip, all_touched=True",
+            aorctodss_resampling="nearest",
+            aorctodss_colormap=colormap or "",
+            aorctodss_transparent_zero=str(transparent_zero).lower(),
         )
     return path
 
@@ -76,7 +80,7 @@ def write_wgs84_animation_cog(
         [mapping(geometry_wgs84)],
         out_shape=array.shape,
         transform=transform,
-        all_touched=False,
+        all_touched=True,
         invert=True,
     )
     valid = inside & np.isfinite(array)
@@ -95,7 +99,7 @@ def write_wgs84_animation_cog(
         "compress": "DEFLATE",
         "predictor": 3,
         "blocksize": 512,
-        "overview_resampling": "average",
+        "overview_resampling": "nearest",
     }
     with rasterio.open(path, "w", **profile) as dataset:
         dataset.write(stored, 1)
@@ -103,6 +107,6 @@ def write_wgs84_animation_cog(
             1,
             units=units,
             statistic="AORC hourly frame",
-            aorctodss_mask="AOI cell-center mask",
+            aorctodss_mask="AORC source clip, all_touched=True",
         )
     return path

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+import math
 from pathlib import Path
 from typing import Any, Literal
 
@@ -75,15 +76,15 @@ class GridDefinition:
 
     @property
     def lower_left_cell_x(self) -> int:
-        """Return the SHG column index at the lower left corner."""
+        """Floor the minimum projected pixel-center X coordinate."""
 
-        return round(self.min_x / self.cell_size)
+        return math.floor((self.min_x + self.cell_size / 2) / self.cell_size)
 
     @property
     def lower_left_cell_y(self) -> int:
-        """Return the SHG row index at the lower left corner."""
+        """Floor the minimum projected pixel-center Y coordinate."""
 
-        return round(self.min_y / self.cell_size)
+        return math.floor((self.min_y + self.cell_size / 2) / self.cell_size)
 
 
 @dataclass

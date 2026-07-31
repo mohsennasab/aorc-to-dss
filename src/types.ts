@@ -213,7 +213,6 @@ export interface PluginState {
   start: string
   end: string
   unitSystem: "metric" | "us-customary"
-  averagingMethod: "cell-center" | "area-weighted"
   watershed: string
   cellSize: number
   bufferM: number

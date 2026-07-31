@@ -1,4 +1,4 @@
-"""AORC raster conversion to a true, origin-aligned SHG grid."""
+"""AORC clipping and source-aligned SHG reprojection."""
 
 from __future__ import annotations
 
@@ -11,15 +11,23 @@ import xarray as xr
 from affine import Affine
 from pyproj import Transformer
 from rasterio.features import geometry_mask
-from rasterio.transform import from_bounds, from_origin
-from rasterio.warp import Resampling, reproject
-from shapely import Geometry
+from rasterio.transform import array_bounds, from_bounds, from_origin
+from rasterio.warp import Resampling, calculate_default_transform, reproject
+from shapely import (
+    Geometry,
+    area as geometry_area,
+    box as geometry_boxes,
+    contains,
+    intersection,
+    intersects,
+    prepare,
+)
 from shapely.geometry import mapping
-from shapely.ops import transform
+from shapely.ops import transform as transform_geometry
 
 from ..exceptions import CancelledError
 from ..models import GridDefinition
-from .shg import SHG_CRS
+from .shg import SHG_CELL_SIZES, SHG_CRS
 
 GridProgress = Callable[[float, str], None]
 
@@ -50,18 +58,135 @@ def destination_transform(grid: GridDefinition) -> Affine:
     return from_origin(grid.min_x, grid.max_y, grid.cell_size, grid.cell_size)
 
 
-def aoi_grid_mask(geometry_wgs84: Geometry, grid: GridDefinition) -> np.ndarray:
-    """Return cells whose centers fall inside the unbuffered AOI polygon."""
+def clip_source_all_touched(
+    data: xr.DataArray,
+    geometry_wgs84: Geometry,
+) -> xr.DataArray:
+    """Mask and crop native AORC cells touched by the AOI.
 
-    transformer = Transformer.from_crs("EPSG:4326", SHG_CRS, always_xy=True)
-    projected = transform(transformer.transform, geometry_wgs84)
-    return geometry_mask(
-        [mapping(projected)],
-        out_shape=(grid.height, grid.width),
-        transform=destination_transform(grid),
-        all_touched=False,
+    The operation retains every source cell touched by the polygon while
+    preserving lazy xarray data.
+    """
+
+    latitudes = np.asarray(data.latitude.values)
+    longitudes = np.asarray(data.longitude.values)
+    north_up_mask = geometry_mask(
+        [mapping(geometry_wgs84)],
+        out_shape=(len(latitudes), len(longitudes)),
+        transform=source_transform(latitudes, longitudes),
+        all_touched=True,
         invert=True,
     )
+    data_order_mask = (
+        np.flipud(north_up_mask)
+        if latitudes[0] < latitudes[-1]
+        else north_up_mask
+    )
+    rows, columns = np.where(data_order_mask)
+    if not rows.size or not columns.size:
+        raise ValueError("The area of interest does not touch an AORC grid cell")
+    row_slice = slice(int(rows.min()), int(rows.max()) + 1)
+    column_slice = slice(int(columns.min()), int(columns.max()) + 1)
+    clipped = data.isel(latitude=row_slice, longitude=column_slice)
+    clipped_mask = xr.DataArray(
+        data_order_mask[row_slice, column_slice],
+        dims=("latitude", "longitude"),
+        coords={
+            "latitude": clipped.latitude,
+            "longitude": clipped.longitude,
+        },
+    )
+    return clipped.where(clipped_mask)
+
+
+def projected_grid(data: xr.DataArray, cell_size: int) -> GridDefinition:
+    """Build a source-aligned projected raster at the requested resolution."""
+
+    if cell_size not in SHG_CELL_SIZES:
+        values = ", ".join(str(value) for value in SHG_CELL_SIZES)
+        raise ValueError(f"SHG cell size must be one of {values} m")
+    latitudes = np.asarray(data.latitude.values)
+    longitudes = np.asarray(data.longitude.values)
+    source = source_transform(latitudes, longitudes)
+    left, bottom, right, top = array_bounds(
+        len(latitudes),
+        len(longitudes),
+        source,
+    )
+    projected, width, height = calculate_default_transform(
+        "EPSG:4326",
+        SHG_CRS,
+        len(longitudes),
+        len(latitudes),
+        left,
+        bottom,
+        right,
+        top,
+        resolution=cell_size,
+    )
+    min_x = float(projected.c)
+    max_y = float(projected.f)
+    max_x = min_x + int(width) * cell_size
+    min_y = max_y - int(height) * cell_size
+    return GridDefinition(
+        cell_size=cell_size,
+        min_x=min_x,
+        min_y=min_y,
+        max_x=max_x,
+        max_y=max_y,
+        width=int(width),
+        height=int(height),
+        crs_wkt=SHG_CRS.to_wkt(version="WKT1_ESRI"),
+    )
+
+
+def shg_area_weights(
+    geometry_wgs84: Geometry,
+    grid: GridDefinition,
+) -> np.ndarray:
+    """Return normalized AOI-overlap weights for an SHG grid.
+
+    Both the source time series and projected-grid validation use exact polygon
+    overlap areas. Because SHG uses an equal-area projection, the weights
+    provide a like-for-like AOI mean after reprojection.
+    """
+
+    transformer = Transformer.from_crs("EPSG:4326", SHG_CRS, always_xy=True)
+    projected_aoi = transform_geometry(transformer.transform, geometry_wgs84)
+    prepare(projected_aoi)
+    weights = np.zeros((grid.height, grid.width), dtype=np.float64)
+    west = grid.min_x + np.arange(grid.width, dtype=np.float64) * grid.cell_size
+    east = west + grid.cell_size
+    for first_row in range(0, grid.height, 32):
+        last_row = min(first_row + 32, grid.height)
+        row_indices = np.arange(first_row, last_row, dtype=np.float64)
+        north = grid.max_y - row_indices * grid.cell_size
+        south = north - grid.cell_size
+        cells = geometry_boxes(
+            np.tile(west, last_row - first_row),
+            np.repeat(south, grid.width),
+            np.tile(east, last_row - first_row),
+            np.repeat(north, grid.width),
+        )
+        overlaps = np.asarray(intersects(projected_aoi, cells), dtype=bool)
+        interior = np.asarray(contains(projected_aoi, cells), dtype=bool)
+        boundary = overlaps & ~interior
+        areas = np.zeros(len(cells), dtype=np.float64)
+        if interior.any():
+            areas[interior] = grid.cell_size**2
+        if boundary.any():
+            areas[boundary] = np.asarray(
+                geometry_area(intersection(cells[boundary], projected_aoi)),
+                dtype=np.float64,
+            )
+        weights[first_row:last_row] = areas.reshape(
+            last_row - first_row,
+            grid.width,
+        )
+    total = float(weights.sum())
+    if total <= 0:
+        raise ValueError("The area of interest does not overlap the projected SHG grid")
+    return weights / total
 
 
 def _north_up(values: np.ndarray, latitudes: np.ndarray) -> np.ndarray:
@@ -73,7 +198,7 @@ def reproject_hour(
     latitudes: np.ndarray,
     longitudes: np.ndarray,
     grid: GridDefinition,
-    resampling: Resampling = Resampling.average,
+    resampling: Resampling = Resampling.nearest,
     source_nodata: float = -32767,
 ) -> np.ndarray:
     """Reproject one AORC raster to SHG."""
@@ -101,7 +226,7 @@ def reproject_series(
     data: xr.DataArray,
     grid: GridDefinition,
     source_nodata: float,
-    resampling: Resampling = Resampling.average,
+    resampling: Resampling = Resampling.nearest,
     cancel: Event | None = None,
     progress: GridProgress | None = None,
 ) -> Iterator[tuple[np.datetime64, np.ndarray]]:

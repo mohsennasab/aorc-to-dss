@@ -23,8 +23,13 @@ def test_naive_time_is_rejected() -> None:
 
 
 def test_custom_event_requires_whole_hours() -> None:
-    with pytest.raises(Exception, match="whole UTC hours"):
+    with pytest.raises(Exception, match="minutes set to 00"):
         custom_event("2020-01-01T00:00:00Z", "2020-01-01T01:30:00Z")
+
+
+def test_custom_event_rejects_matching_half_hour_boundaries() -> None:
+    with pytest.raises(Exception, match="minutes set to 00"):
+        custom_event("2020-01-01T00:30:00Z", "2020-01-01T01:30:00Z")
 
 
 def test_event_duration_sets_end_time() -> None:

@@ -3,10 +3,6 @@
 AORCtoDSS is a GeoLibre plugin for preparing NOAA Analysis of Record for
 Calibration data for HEC-HMS and other HEC applications.
 
-> **Development status:** AORCtoDSS is under development. Processing methods,
-> interfaces, and release packaging may change. Review the validation report
-> and confirm the results before using an output in a model.
-
 The plugin can:
 
 - Read AORC data for a selected polygon and time period
@@ -21,6 +17,8 @@ The plugin can:
 
 The source repository is
 [mohsennasab/aorc-to-dss](https://github.com/mohsennasab/aorc-to-dss).
+Developer background and related water-resources tools are available at
+[hydromohsen.com](https://hydromohsen.com/).
 
 ![AORCtoDSS workbench](docs/images/workbench.gif)
 
@@ -69,7 +67,7 @@ Use this option when the processing service is already installed or is running
 from source.
 
 1. Open **Settings > Manage Plugins > Install from file** in GeoLibre.
-2. Select `AORCtoDSS-plugin-0.1.7.zip`.
+2. Select `AORCtoDSS-plugin-0.1.8.zip`.
 3. Restart GeoLibre.
 4. Activate **AORCtoDSS** from the Plugins menu.
 
@@ -88,7 +86,7 @@ GeoLibre desktop, GeoLibre web, and local development origins.
 
 The plugin has six steps.
 
-#### Step 1: Study Area
+#### Step 1: AOI Selection
 
 Choose one of the study area methods:
 
@@ -122,14 +120,11 @@ The variable list loads when the local service becomes available. Choose:
 
 The end time is exclusive for the time-series request.
 
-#### Step 3: Time Series
+#### Step 3: AOI Time Series
 
-Choose an averaging method:
-
-- **Area weighted** intersects AORC cells with the polygon in an equal-area
-  projection. This is the default.
-- **Cell center** gives equal weight to cells whose centers fall inside the
-  polygon.
+The AOI time series always uses area-weighted averaging. It intersects AORC
+cells with the polygon in an equal-area projection, so partial boundary cells
+contribute according to the area inside the AOI.
 
 Select **Run analysis** to calculate the watershed-average series.
 
@@ -142,7 +137,6 @@ The chart supports:
 
 - Mouse wheel zoom
 - Shift and drag to pan
-- Drag to select an event interval
 - PNG export with a save dialog
 - CSV export
 
@@ -157,6 +151,9 @@ Enter an event start and end time, or choose one of these durations:
 - 48 hours
 - 72 hours
 - 96 hours
+
+Both boundaries must use `:00` minutes because AORC precipitation grids
+represent complete hourly intervals.
 
 The selected interval is plotted below the event summary. The summary reports
 the number of hourly grids, UTC period, units, and selected-series statistic.
@@ -186,6 +183,10 @@ Animation frames:
 - Use a radar-style color scale
 - Progress from blue and green through yellow and red
 - Use magenta and pink for the highest precipitation
+- Show an on-map rainfall color scale with values in the selected units
+
+During playback, a red marker moves along the selected-event plot to identify
+the active hour and its AOI-average value.
 
 The first download takes longer for a large study area or a 96-hour event.
 Cached frames remain under `%LOCALAPPDATA%\AORCtoDSS\cache\animations`.
@@ -212,8 +213,12 @@ The default is 2000 m.
 Select **Estimate size** to review the grid dimensions, record count, and
 estimated storage. Select **Create DSS and validate** to run the export.
 
-The export reads the selected event from NOAA, converts the values, reprojects
-each hourly grid, writes the DSS records, and reads them back for validation.
+The export reads the selected event from NOAA, converts the values, clips the
+native AORC grid with `all_touched=True`, reprojects each hourly grid with
+nearest-neighbor resampling, writes the DSS records, and reads them back for
+validation. DSS lower-left indices are calculated by flooring the minimum
+projected pixel-center coordinates. Event start and end times must fall exactly
+on UTC hours with minutes set to `00`.
 
 #### Step 6: Results
 
@@ -230,7 +235,7 @@ The checks include:
 - SHG dimensions and cell indices
 - SHG projection metadata
 - Non-null grids
-- Reprojection and DSS read-back differences
+- Area-weighted reprojection and DSS read-back differences
 
 A warning is not the same as a failed write. Review the finding and processing
 log to decide whether the result is acceptable for the model.
@@ -238,8 +243,9 @@ log to decide whether the result is acceptable for the model.
 The event summary COG is added to the map with:
 
 - EPSG:5070 SHG coordinates
-- Polygon clipping
-- A precipitation color ramp
+- Native AORC source clipping with `all_touched=True`
+- Nearest-neighbor reprojection
+- The same radar-style precipitation palette used by the animation
 - Transparent zero and NoData pixels
 
 ### Units
@@ -346,10 +352,10 @@ If the service restarted during the download, select the button again.
 This is expected when the precipitation grid contains only zeros. Zero
 precipitation is transparent.
 
-#### No SHG cells intersect the polygon
+#### No AORC cells touch the polygon
 
-Choose a smaller SHG cell size. A coarse grid can leave no cell centers inside
-a small polygon.
+Confirm that the AOI is inside the CONUS AORC domain and that its coordinates
+and declared CRS are correct.
 
 #### An output file already exists
 
@@ -444,6 +450,21 @@ scripts/
 The browser plugin does not write HEC-DSS files. It sends requests to the
 loopback service. The service owns NOAA reads, raster processing, native
 HEC-DSS calls, output files, and animation caches.
+
+The raster export follows this source-aligned sequence:
+
+1. Clip native AORC cells with `all_touched=True`.
+2. Retain NoData outside the clipped polygon inside the rectangular source
+   extent.
+3. Calculate the default NAD83 Albers output transform at the requested SHG
+   resolution.
+4. Reproject with nearest-neighbor resampling.
+5. Floor the minimum projected pixel-center coordinates to obtain the DSS
+   lower-left indices.
+
+AOI time-series averaging is a separate operation. It always uses
+area-weighted polygon intersections and is not changed by the raster
+resampling choice.
 
 ### Run the tests
 
@@ -557,13 +578,13 @@ files, memory files, and Markdown files. Inspect the archive before publishing:
 
 ```powershell
 npm run package:plugin
-tar -tf .\release\AORCtoDSS-plugin-0.1.7.zip
+tar -tf .\release\AORCtoDSS-plugin-0.1.8.zip
 ```
 
 The plugin archive should contain:
 
 - `plugin.json`
-- `icons/aorctodss.svg`
+- `icons/aorctodss.png`
 - `dist/index.js`
 - `dist/index.js.map`
 - `dist/style.css`
@@ -585,6 +606,11 @@ More implementation notes are available in
 - NOAA may regenerate an annual AORC store. Record the access date for
   production work.
 
+## Support
+
+If AORCtoDSS saves time on a project, you can support continued development
+through [Buy Me a Coffee](https://buymeacoffee.com/hydromohsen).
+
 ## License and attribution
 
 AORCtoDSS is licensed under the MIT License.
@@ -600,6 +626,10 @@ program. Cite the dataset as:
 
 Output rasters are transformed products and should not be described as
 unaltered NOAA data.
+
+> **Development status:** AORCtoDSS is under development. Processing methods,
+> interfaces, and release packaging may change. Review the validation report
+> and confirm the results.
 
 References:
 

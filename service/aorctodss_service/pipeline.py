@@ -33,8 +33,18 @@ from .outputs import (
 )
 from .spatial.cog import write_cog
 from .spatial.geometry import prepare_geometry
-from .spatial.reprojection import aoi_grid_mask, reproject_series
-from .spatial.shg import SHG_CRS, build_shg_grid, grid_estimates
+from .spatial.reprojection import (
+    clip_source_all_touched,
+    projected_grid,
+    reproject_series,
+    shg_area_weights,
+)
+from .spatial.shg import (
+    SHG_CRS,
+    buffered_geometry_wgs84,
+    build_shg_grid,
+    grid_estimates,
+)
 from .units import convert_points, convert_values, output_units
 
 Progress = Callable[[float, str], None]
@@ -136,7 +146,7 @@ def run_export(
         event = custom_event(payload["event_start"], payload["event_end"])
         metadata = catalog.variable(payload["variable"])
         units = output_units(metadata, payload.get("unit_system", "metric"))
-        grid = build_shg_grid(
+        request_grid = build_shg_grid(
             summary.geometry,
             int(payload.get("cell_size", 2000)),
             float(payload.get("buffer_m", 0)),
@@ -146,10 +156,9 @@ def run_export(
             event.end,
             metadata.aggregation,
         )
-        bounds = _output_bounds_wgs84(grid)
+        bounds = _output_bounds_wgs84(request_grid)
         logger.info("AOI area %.3f sq km", summary.area_sq_km)
         logger.info("Event %s to %s UTC", event.start.isoformat(), event.end.isoformat())
-        logger.info("SHG grid %s by %s at %s m", grid.width, grid.height, grid.cell_size)
         dss_file = output_dir / payload.get("dss_filename", "aorc_event.dss")
         if dss_file.exists() and not bool(payload.get("overwrite", False)):
             raise FileExistsError(
@@ -213,24 +222,39 @@ def run_export(
             )
             zarr_partial.replace(zarr_store)
         data = xr.open_zarr(zarr_store, consolidated=True)[metadata.source_name]
+        raster_geometry = buffered_geometry_wgs84(
+            summary.geometry,
+            float(payload.get("buffer_m", 0)),
+        )
+        raster_data = clip_source_all_touched(data, raster_geometry)
+        grid = projected_grid(
+            raster_data,
+            int(payload.get("cell_size", 2000)),
+        )
+        logger.info(
+            "Source-aligned SHG grid %s by %s at %s m",
+            grid.width,
+            grid.height,
+            grid.cell_size,
+        )
+        logger.info(
+            "Rasterization uses all_touched=True, nearest-neighbor resampling, "
+            "and floored minimum projected pixel-center indices"
+        )
         progress(0.22, "Calculating watershed averages")
         points = average_dataarray(
             data,
             summary.geometry,
             metadata.missing_value,
             metadata.units,
-            payload.get("averaging_method", "area-weighted"),
+            "area-weighted",
             output_dir / ".weights",
             cancel,
             lambda value, message: progress(0.22 + value * 0.13, message),
         )
         points = convert_points(points, metadata.units, units)
-        aoi_mask = aoi_grid_mask(summary.geometry, grid)
-        if not np.any(aoi_mask):
-            raise ValueError(
-                "The selected SHG cell size leaves no cell centers inside the study area. "
-                "Choose a smaller SHG cell size."
-            )
+        progress(0.35, "Preparing area-weighted SHG validation")
+        validation_weights = shg_area_weights(summary.geometry, grid)
         timeseries_file = write_timeseries_csv(output_dir / "watershed_timeseries.csv", points)
         timeseries_parquet = write_timeseries_parquet(
             output_dir / "watershed_timeseries.parquet",
@@ -244,11 +268,7 @@ def run_export(
         ).to_file(aoi_file, layer="study_area", driver="GPKG")
         if dss_file.exists():
             dss_file.unlink()
-        resampling = (
-            Resampling.average
-            if metadata.aggregation == "sum"
-            else Resampling.bilinear
-        )
+        resampling = Resampling.nearest
         pathnames: list[str] = []
         source_means: list[float] = []
         projected_means: list[float] = []
@@ -258,7 +278,7 @@ def run_export(
         with HecDssAdapter(dss_file) as adapter:
             for index, (timestamp, values) in enumerate(
                 reproject_series(
-                    data,
+                    raster_data,
                     grid,
                     metadata.missing_value,
                     resampling,
@@ -270,10 +290,15 @@ def run_export(
                     float(point_value) if point_value is not None else float("nan")
                 )
                 values = convert_values(values, metadata.units, units.calculation)
-                values = np.where(aoi_mask, values, np.nan)
-                valid = np.isfinite(values)
+                valid = np.isfinite(values) & (validation_weights > 0)
+                valid_weight = float(validation_weights[valid].sum())
                 projected_means.append(
-                    float(values[valid].mean()) if np.any(valid) else float("nan")
+                    float(
+                        np.sum(values[valid] * validation_weights[valid])
+                        / valid_weight
+                    )
+                    if valid_weight > 0
+                    else float("nan")
                 )
                 if metadata.aggregation == "sum":
                     summary_grid[valid] += values[valid]
@@ -339,7 +364,7 @@ def run_export(
         else:
             display_min, display_max = 0.0, 1.0
         visualization = {
-            "colormap": "blues" if metadata.source_name == "APCP_surface" else "viridis",
+            "colormap": "gist_ncar" if metadata.source_name == "APCP_surface" else "viridis",
             "rescale_min": 0.0 if metadata.source_name == "APCP_surface" else display_min,
             "rescale_max": display_max,
             "nodata": -9999.0,
@@ -353,6 +378,7 @@ def run_export(
             units.dss,
             statistic,
             transparent_zero=metadata.source_name == "APCP_surface",
+            colormap=visualization["colormap"],
         )
         progress(0.75, "Reading the DSS file back for validation")
         checks = validate_dss(
@@ -364,6 +390,7 @@ def run_export(
             event.end,
             source_means,
             projected_means,
+            validation_weights,
         )
         pathname_inventory = write_json(output_dir / "dss_pathnames.json", pathnames)
         grid_metadata = write_json(
@@ -385,6 +412,14 @@ def run_export(
                     "system": payload.get("unit_system", "metric"),
                 },
                 "aoi": summary.to_dict(),
+                "processing": {
+                    "timeseries_averaging": "area-weighted",
+                    "source_clip_all_touched": True,
+                    "resampling": "nearest",
+                    "lower_left_indices": (
+                        "floor minimum projected pixel-center coordinates"
+                    ),
+                },
             },
         )
         validation_report = write_json(
@@ -406,6 +441,14 @@ def run_export(
                 "watershed": payload.get("watershed", "WATERSHED"),
                 "aoi_geometry": json.loads(to_geojson(summary.geometry)),
                 "output_statistic": statistic,
+                "processing": {
+                    "timeseries_averaging": "area-weighted",
+                    "source_clip_all_touched": True,
+                    "resampling": "nearest",
+                    "lower_left_indices": (
+                        "floor minimum projected pixel-center coordinates"
+                    ),
+                },
             },
         )
         download_log = output_dir / "download.log"

@@ -4,7 +4,8 @@ import { previewGridPath } from "../core/pathname"
 import {
   asUtcIso,
   durationEvent,
-  forDateTimeInput
+  forDateTimeInput,
+  isWholeUtcHour
 } from "../core/time"
 import type {
   FeatureCollection,
@@ -15,6 +16,7 @@ import type {
   VariableMetadata
 } from "../types"
 import { AoiMapController } from "./aoi-map"
+import { RainfallLegendControl } from "./rainfall-legend"
 import { TimeSeriesChart } from "./timeseries-chart"
 
 const DEFAULT_STATE: PluginState = {
@@ -24,7 +26,6 @@ const DEFAULT_STATE: PluginState = {
   start: "",
   end: "",
   unitSystem: "metric",
-  averagingMethod: "area-weighted",
   watershed: "WATERSHED",
   cellSize: 2000,
   bufferM: 4000
@@ -36,6 +37,7 @@ export class AORCWorkbench {
   private mapTools: AoiMapController
   private chart: TimeSeriesChart | null = null
   private eventChart: TimeSeriesChart | null = null
+  private rainfallLegend: RainfallLegendControl | null = null
   private variables: VariableMetadata[] = []
   private points: TimeSeriesPoint[] = []
   private selectedEventPoints: TimeSeriesPoint[] = []
@@ -43,6 +45,8 @@ export class AORCWorkbench {
   private activeJob: string | null = null
   private pollController: AbortController | null = null
   private animationRevision = 0
+  private timeSliderObserver: MutationObserver | null = null
+  private timeSliderSearchTimer: number | null = null
   private serviceTimer: number | null = null
   private metadataLoaded = false
   private cleanup: Array<() => void> = []
@@ -82,6 +86,8 @@ export class AORCWorkbench {
     if (this.serviceTimer !== null) window.clearTimeout(this.serviceTimer)
     this.chart?.destroy()
     this.eventChart?.destroy()
+    this.detachTimeSliderCursor()
+    this.removeRainfallLegend()
     this.mapTools.destroy()
     this.cleanup.forEach(callback => callback())
     this.container.replaceChildren()
@@ -101,10 +107,10 @@ export class AORCWorkbench {
         <div class="a2d-progress-row"><span data-progress-text></span><button type="button" data-action="cancel-job">Cancel</button></div>
       </div>
       <nav class="a2d-tabs" aria-label="AORCtoDSS workflow">
-        ${this.tabButton("study", "1", "Study Area", true)}
+        ${this.tabButton("study", "1", "AOI Selection", true)}
         ${this.tabButton("data", "2", "AORC Data")}
-        ${this.tabButton("series", "3", "Time Series")}
-        ${this.tabButton("event", "4", "Event")}
+        ${this.tabButton("series", "3", "AOI Time Series")}
+        ${this.tabButton("event", "4", "Event Selection")}
         ${this.tabButton("export", "5", "DSS Export")}
         ${this.tabButton("results", "6", "Results")}
       </nav>
@@ -121,13 +127,13 @@ export class AORCWorkbench {
   }
 
   private tabButton(id: string, number: string, label: string, active = false): string {
-    return `<button type="button" class="${active ? "active" : ""}" data-tab="${id}"><span>${number}</span>${label}</button>`
+    return `<button type="button" class="${active ? "active" : ""}" data-tab="${id}" aria-label="${label}" title="${label}"><span>${number}</span></button>`
   }
 
   private studyPage(): string {
     return `
       <section class="a2d-page active" data-page="study">
-        <h2>Study Area</h2>
+        <h2>AOI Selection</h2>
         <p class="a2d-help">Choose a polygon. A declared GeoJSON CRS is detected and the analysis copy is transformed to WGS84.</p>
         <div class="a2d-button-grid">
           <button type="button" data-action="draw-aoi">Draw polygon</button>
@@ -150,7 +156,7 @@ export class AORCWorkbench {
   private dataPage(): string {
     return `
       <section class="a2d-page" data-page="data">
-        <h2>AORC Variable and Period</h2>
+        <h2>AORC Data</h2>
         <label>Variable<select data-field="variable"><option>Loading AORC variables automatically</option></select></label>
         <label>Time-series and DSS unit system
           <select data-field="unit-system">
@@ -173,20 +179,15 @@ export class AORCWorkbench {
   private seriesPage(): string {
     return `
       <section class="a2d-page" data-page="series">
-        <h2>Watershed Time Series</h2>
-        <label>Averaging method
-          <select data-field="averaging-method">
-            <option value="area-weighted">Area weighted</option>
-            <option value="cell-center">Cell center</option>
-          </select>
-        </label>
+        <h2>AOI Time Series</h2>
+        <p class="a2d-help">The AOI mean is area weighted, including partial AORC cells along the boundary.</p>
         <button type="button" class="a2d-primary" data-action="run-timeseries">Run analysis</button>
         <div class="a2d-chart-toolbar">
           <button type="button" data-action="chart-reset">Reset view</button>
           <button type="button" data-action="chart-image">Save image...</button>
           <button type="button" data-action="series-csv">Export CSV</button>
         </div>
-        <p class="a2d-help">Wheel to zoom. Shift and drag to pan. Drag to select an event interval.</p>
+        <p class="a2d-help">Wheel to zoom. Shift and drag to pan.</p>
         <div class="a2d-chart-host" data-chart></div>
         <button type="button" class="a2d-primary" data-next="event" disabled>Continue to Event Selection</button>
       </section>
@@ -199,8 +200,8 @@ export class AORCWorkbench {
         <h2>Event Selection</h2>
         <p class="a2d-help">Enter a start and end time, or enter the start and use a duration button to update the end automatically.</p>
         <div class="a2d-two-column">
-          <label>Event start, UTC<input type="datetime-local" data-field="event-start"></label>
-          <label>Event end, UTC<input type="datetime-local" data-field="event-end"></label>
+          <label>Event start, UTC<input type="datetime-local" step="3600" data-field="event-start"></label>
+          <label>Event end, UTC<input type="datetime-local" step="3600" data-field="event-end"></label>
         </div>
         <div class="a2d-button-row">
           <button type="button" data-duration="24">24 hours</button>
@@ -219,6 +220,7 @@ export class AORCWorkbench {
         <div class="a2d-summary" data-animation-status>
           Select an event, then use the button above to preload its animation.
         </div>
+        <div class="a2d-animation-legend" hidden data-animation-legend></div>
         <h3>Selected event time series</h3>
         <div class="a2d-chart-host a2d-event-chart-host" data-event-chart></div>
         <button type="button" class="a2d-primary" data-next="export" disabled>Continue to DSS Export</button>
@@ -229,7 +231,7 @@ export class AORCWorkbench {
   private exportPage(): string {
     return `
       <section class="a2d-page" data-page="export">
-        <h2>Grid Download and DSS Conversion</h2>
+        <h2>DSS Export</h2>
         <label>Output folder
           <span class="a2d-input-action"><input type="text" data-field="output-dir" placeholder="C:\\AORCtoDSS\\Project"><button type="button" data-action="choose-output">Browse</button></span>
         </label>
@@ -245,7 +247,7 @@ export class AORCWorkbench {
           </label>
           <label>AOI buffer, m<input type="number" min="0" step="100" value="${this.state.bufferM}" data-field="buffer-m"></label>
         </div>
-        <label>Resampling method<input type="text" value="Average for precipitation, bilinear for state variables" disabled></label>
+        <label>Raster processing<input type="text" value="Nearest neighbor; source clip all_touched=True" disabled></label>
         <label class="a2d-check"><input type="checkbox" data-field="overwrite"> Replace an existing output file</label>
         <h3>DSS pathname preview</h3>
         <code data-path-preview></code>
@@ -307,6 +309,7 @@ export class AORCWorkbench {
     this.field<HTMLSelectElement>("variable").addEventListener("change", event => {
       this.state.variable = (event.target as HTMLSelectElement).value
       this.animationRevision += 1
+      this.clearAnimationPresentation()
       this.points = []
       this.selectedEventPoints = []
       this.event = null
@@ -329,6 +332,7 @@ export class AORCWorkbench {
     this.field<HTMLSelectElement>("unit-system").addEventListener("change", event => {
       this.state.unitSystem = (event.target as HTMLSelectElement).value as PluginState["unitSystem"]
       this.animationRevision += 1
+      this.clearAnimationPresentation()
       this.refreshVariableLabels()
       this.showVariable()
       this.points = []
@@ -354,9 +358,6 @@ export class AORCWorkbench {
     })
     this.field<HTMLInputElement>("end").addEventListener("change", event => {
       this.state.end = asUtcIso((event.target as HTMLInputElement).value)
-    })
-    this.field<HTMLSelectElement>("averaging-method").addEventListener("change", event => {
-      this.state.averagingMethod = (event.target as HTMLSelectElement).value as PluginState["averagingMethod"]
     })
     this.field<HTMLInputElement>("event-start").addEventListener("change", () => this.readEventInputs())
     this.field<HTMLInputElement>("event-end").addEventListener("change", () => this.readEventInputs())
@@ -555,6 +556,7 @@ export class AORCWorkbench {
 
   private clearAoi(): void {
     this.animationRevision += 1
+    this.clearAnimationPresentation()
     this.state.aoi = null
     this.event = null
     this.selectedEventPoints = []
@@ -601,8 +603,7 @@ export class AORCWorkbench {
         variable: this.state.variable,
         start: this.state.start,
         end: this.state.end,
-        unit_system: this.state.unitSystem,
-        averaging_method: this.state.averagingMethod
+        unit_system: this.state.unitSystem
       })
       const result = await this.monitor(job)
       if (result.state !== "complete") {
@@ -614,6 +615,7 @@ export class AORCWorkbench {
       this.q<HTMLButtonElement>('[data-next="event"]').disabled = false
       if (this.points.length) {
         this.animationRevision += 1
+        this.clearAnimationPresentation()
         this.event = null
         this.selectedEventPoints = []
         this.eventChart?.destroy()
@@ -691,6 +693,9 @@ export class AORCWorkbench {
   private setEvent(start: string, end: string): void {
     const startTime = new Date(start)
     const endTime = new Date(end)
+    if (!isWholeUtcHour(startTime) || !isWholeUtcHour(endTime)) {
+      throw new Error("Event start and end must use :00 minutes in UTC")
+    }
     const hours = (endTime.getTime() - startTime.getTime()) / 3_600_000
     if (hours <= 0) throw new Error("Event end must be after event start")
     if (!Number.isInteger(hours)) throw new Error("Event times must define a whole number of hours")
@@ -701,6 +706,7 @@ export class AORCWorkbench {
       throw new Error("Event end is after the analyzed time series")
     }
     this.animationRevision += 1
+    this.clearAnimationPresentation()
     this.event = { start: startTime.toISOString(), end: endTime.toISOString() }
     this.field<HTMLInputElement>("event-start").value = forDateTimeInput(this.event.start)
     this.field<HTMLInputElement>("event-end").value = forDateTimeInput(this.event.end)
@@ -787,6 +793,29 @@ export class AORCWorkbench {
           `${percent}% — loaded ${completed} of ${registration.times.length} frames into GeoLibre's cache`
       })
       if (revision !== this.animationRevision) return
+      const animationLegend = this.q<HTMLElement>("[data-animation-legend]")
+      animationLegend.hidden = false
+      animationLegend.innerHTML = `
+        <strong>Hourly rainfall (${this.escape(registration.units)})</strong>
+        <div class="a2d-rainfall-gradient" aria-hidden="true"></div>
+        <div class="a2d-animation-legend-values">
+          <span>${this.formatLegendValue(registration.rescale[0], registration.rescale[1])}</span>
+          <span>${this.formatLegendValue((registration.rescale[0] + registration.rescale[1]) / 2, registration.rescale[1])}</span>
+          <span>${this.formatLegendValue(registration.rescale[1], registration.rescale[1])}</span>
+        </div>
+      `
+      this.removeRainfallLegend()
+      if (this.state.variable === "APCP_surface") {
+        const legend = new RainfallLegendControl(
+          registration.rescale[0],
+          registration.rescale[1],
+          registration.units
+        )
+        if (this.app.addMapControl(legend, "bottom-right")) {
+          this.rainfallLegend = legend
+        }
+      }
+      this.eventChart?.setCursorTime(registration.times[0]!)
       const activated = await this.app.activatePlugin?.("maplibre-gl-time-slider", {
         startDate: registration.times[0],
         endDate: registration.times.at(-1),
@@ -795,6 +824,7 @@ export class AORCWorkbench {
         granularity: "hour",
         granularities: ["hour"],
         currentDate: registration.times[0],
+        initialDate: registration.times[0],
         speed: 800,
         loop: true,
         autoPlay: false,
@@ -818,11 +848,13 @@ export class AORCWorkbench {
         throw new Error("This GeoLibre build could not open its native Time Slider")
       }
       if (revision !== this.animationRevision) return
+      this.attachTimeSliderCursor(registration.times, revision)
       this.app.fitBounds?.(registration.bounds)
       status.innerHTML = `
         <strong>Time Slider animation is ready to play</strong>
         <span>All ${registration.times.length.toLocaleString()} hourly frames are downloaded and cached locally.</span>
         <span>Use Play in the Time Slider below the map. Rainfall uses a radar-style scale with the highest intensities in pink.</span>
+        <span>The red marker on the selected-event plot follows the active animation hour.</span>
       `
       progressBar.style.width = "100%"
       progressText.textContent =
@@ -830,6 +862,7 @@ export class AORCWorkbench {
       button.textContent = "Rebuild Time Slider animation"
     } catch (error) {
       if (revision !== this.animationRevision) return
+      this.clearAnimationPresentation()
       status.textContent = `Animation could not be prepared: ${this.message(error)}`
       progressWrap.hidden = true
       button.textContent = "Retry Time Slider download"
@@ -877,6 +910,7 @@ export class AORCWorkbench {
       const end = this.field<HTMLInputElement>("event-end").value
       if (!start || !end) {
         this.animationRevision += 1
+        this.clearAnimationPresentation()
         this.event = null
         this.selectedEventPoints = []
         this.q("[data-animation-status]").textContent =
@@ -907,7 +941,6 @@ export class AORCWorkbench {
       unit_system: this.state.unitSystem,
       event_start: this.event.start,
       event_end: this.event.end,
-      averaging_method: this.state.averagingMethod,
       output_dir: this.field<HTMLInputElement>("output-dir").value,
       dss_filename: this.field<HTMLInputElement>("dss-filename").value,
       watershed: this.state.watershed,
@@ -1008,7 +1041,7 @@ export class AORCWorkbench {
     try {
       const cogUrl = this.client.fileUrl(job.id, "event_summary.tif")
       await this.app.addCogLayer?.("AORC event summary", cogUrl, {
-        colormap: result.visualization?.colormap ?? "blues",
+        colormap: result.visualization?.colormap ?? "gist_ncar",
         rescaleMin: result.visualization?.rescale_min ?? 0,
         rescaleMax: result.visualization?.rescale_max ?? 1,
         nodata: result.visualization?.nodata ?? -9999,
@@ -1083,7 +1116,6 @@ export class AORCWorkbench {
   private syncInputs(): void {
     this.field<HTMLSelectElement>("variable").value = this.state.variable
     this.field<HTMLSelectElement>("unit-system").value = this.state.unitSystem
-    this.field<HTMLSelectElement>("averaging-method").value = this.state.averagingMethod
     if (this.state.start) this.field<HTMLInputElement>("start").value = forDateTimeInput(this.state.start)
     if (this.state.end) this.field<HTMLInputElement>("end").value = forDateTimeInput(this.state.end)
     this.field<HTMLInputElement>("watershed").value = this.state.watershed
@@ -1131,6 +1163,78 @@ export class AORCWorkbench {
       tab.classList.toggle("active", (tab as HTMLElement).dataset.tab === id)
     })
     this.container.querySelector(".a2d-pages")?.scrollTo({ top: 0 })
+  }
+
+  private removeRainfallLegend(): void {
+    if (!this.rainfallLegend) return
+    this.app.removeMapControl(this.rainfallLegend)
+    this.rainfallLegend = null
+  }
+
+  private clearAnimationPresentation(): void {
+    this.detachTimeSliderCursor()
+    this.removeRainfallLegend()
+    this.eventChart?.setCursorTime(null)
+    const legend = this.container.querySelector<HTMLElement>("[data-animation-legend]")
+    if (legend) {
+      legend.hidden = true
+      legend.replaceChildren()
+    }
+  }
+
+  private formatLegendValue(value: number, maximum: number): string {
+    if (maximum <= 5) return value.toFixed(2)
+    if (maximum <= 50) return value.toFixed(1)
+    return Math.round(value).toString()
+  }
+
+  private attachTimeSliderCursor(times: string[], revision: number, attempt = 0): void {
+    if (attempt === 0) this.detachTimeSliderCursor()
+    if (revision !== this.animationRevision) return
+    const marker = document.querySelector<HTMLElement>(
+      ".maplibregl-time-slider-dock .ts-marker-label"
+    )
+    if (!marker) {
+      if (attempt >= 40) return
+      this.timeSliderSearchTimer = window.setTimeout(
+        () => this.attachTimeSliderCursor(times, revision, attempt + 1),
+        50
+      )
+      return
+    }
+    this.timeSliderSearchTimer = null
+    const timeByLabel = new Map(times.map(time => [this.timeSliderLabel(time), time]))
+    const update = (): void => {
+      const activeTime = timeByLabel.get(marker.textContent?.trim() ?? "")
+      if (activeTime) this.eventChart?.setCursorTime(activeTime)
+    }
+    this.timeSliderObserver = new MutationObserver(update)
+    this.timeSliderObserver.observe(marker, {
+      childList: true,
+      characterData: true,
+      subtree: true
+    })
+    update()
+  }
+
+  private detachTimeSliderCursor(): void {
+    this.timeSliderObserver?.disconnect()
+    this.timeSliderObserver = null
+    if (this.timeSliderSearchTimer !== null) {
+      window.clearTimeout(this.timeSliderSearchTimer)
+      this.timeSliderSearchTimer = null
+    }
+  }
+
+  private timeSliderLabel(value: string): string {
+    const date = new Date(value)
+    const months = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ]
+    const pad = (part: number): string => String(part).padStart(2, "0")
+    return `${date.getUTCFullYear()} ${months[date.getUTCMonth()]} ` +
+      `${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:00`
   }
 
   private onAction(name: string, callback: () => void): void {

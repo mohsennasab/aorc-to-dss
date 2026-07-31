@@ -105,7 +105,10 @@ def test_synthetic_event_export(tmp_path: Path, monkeypatch) -> None:
         assert dataset.crs.to_epsg() == 5070
         assert dataset.tags(ns="IMAGE_STRUCTURE")["LAYOUT"] == "COG"
         assert dataset.nodata == -9999
-        assert dataset.tags(1)["aorctodss_mask"] == "AOI cell-center mask"
+        assert dataset.tags(1)["aorctodss_mask"] == "AORC source clip, all_touched=True"
+        assert dataset.tags(1)["aorctodss_resampling"] == "nearest"
+        assert dataset.tags(1)["aorctodss_colormap"] == "gist_ncar"
+        assert dataset.tags(1)["aorctodss_transparent_zero"] == "true"
         assert np.any(raster == dataset.nodata)
         assert np.any(raster != dataset.nodata)
         assert not np.any(raster == 0)
@@ -115,8 +118,14 @@ def test_synthetic_event_export(tmp_path: Path, monkeypatch) -> None:
         assert np.any(dss_values > -3.0e38)
     grid_metadata = json.loads(result.grid_metadata.read_text(encoding="utf-8"))
     assert grid_metadata["output_units"]["dss"] == "IN"
+    assert grid_metadata["processing"] == {
+        "timeseries_averaging": "area-weighted",
+        "source_clip_all_touched": True,
+        "resampling": "nearest",
+        "lower_left_indices": "floor minimum projected pixel-center coordinates",
+    }
     assert result.visualization == {
-        "colormap": "blues",
+        "colormap": "gist_ncar",
         "rescale_min": 0.0,
         "rescale_max": result.visualization["rescale_max"],
         "nodata": -9999.0,
@@ -124,3 +133,11 @@ def test_synthetic_event_export(tmp_path: Path, monkeypatch) -> None:
         "crs": "EPSG:5070",
     }
     assert result.visualization["rescale_max"] > 0
+    value_check = next(
+        check for check in result.validation if check.name == "Value preservation"
+    )
+    assert value_check.status == "pass"
+    assert value_check.details["comparison"] == (
+        "Area-weighted AOI means before and after reprojection"
+    )
+    assert value_check.details["event_total"]["percent_difference"] < 0.01

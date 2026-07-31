@@ -17,6 +17,7 @@ export class TimeSeriesChart {
   private viewEnd = 1
   private dragStart: { x: number; time: number } | null = null
   private panMode = false
+  private cursorTime: number | null = null
   private observer: ResizeObserver
 
   constructor(private readonly container: HTMLElement, private readonly options: ChartOptions) {
@@ -47,6 +48,11 @@ export class TimeSeriesChart {
     this.maxTime = this.times[this.times.length - 1] ?? this.minTime + 1
     if (this.maxTime === this.minTime) this.maxTime += 3_600_000
     this.reset()
+  }
+
+  setCursorTime(value: Date | string | null): void {
+    this.cursorTime = value === null ? null : new Date(value).getTime()
+    this.draw()
   }
 
   reset(): void {
@@ -139,6 +145,38 @@ export class TimeSeriesChart {
       }
     })
     ctx.stroke()
+    if (this.cursorTime !== null && this.points.length) {
+      const index = this.times.reduce((best, value, candidate) =>
+        Math.abs(value - this.cursorTime!) < Math.abs(this.times[best]! - this.cursorTime!)
+          ? candidate
+          : best
+      , 0)
+      const point = this.points[index]
+      const time = this.times[index]
+      if (
+        point?.value !== null &&
+        point?.value !== undefined &&
+        time !== undefined &&
+        time >= this.viewStart &&
+        time <= this.viewEnd
+      ) {
+        const px = x(time)
+        const py = y(point.value)
+        ctx.strokeStyle = "rgba(201, 48, 44, 0.55)"
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(px, top)
+        ctx.lineTo(px, top + plotHeight)
+        ctx.stroke()
+        ctx.fillStyle = "#c9302c"
+        ctx.beginPath()
+        ctx.arc(px, py, 5, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.strokeStyle = "#ffffff"
+        ctx.lineWidth = 1.5
+        ctx.stroke()
+      }
+    }
     ctx.fillStyle = getComputedStyle(this.container).color
     const startLabel = new Date(this.viewStart).toISOString().slice(0, 10)
     const endLabel = new Date(this.viewEnd).toISOString().slice(0, 10)

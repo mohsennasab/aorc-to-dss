@@ -20,6 +20,17 @@ SHG_CRS = CRS.from_proj4(
 SHG_WKT = SHG_CRS.to_wkt(version="WKT1_ESRI")
 
 
+def buffered_geometry_wgs84(geometry_wgs84: Geometry, buffer_m: float) -> Geometry:
+    """Buffer an AOI in SHG meters and return the result in WGS84."""
+
+    if buffer_m <= 0:
+        return geometry_wgs84
+    forward = Transformer.from_crs("EPSG:4326", SHG_CRS, always_xy=True)
+    reverse = Transformer.from_crs(SHG_CRS, "EPSG:4326", always_xy=True)
+    projected = transform(forward.transform, geometry_wgs84)
+    return transform(reverse.transform, projected.buffer(buffer_m))
+
+
 def align_bounds(bounds: Iterable[float], cell_size: int) -> tuple[float, float, float, float]:
     """Expand bounds to exact SHG cell edges."""
 

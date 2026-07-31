@@ -33,7 +33,7 @@ describe("AORC workbench startup", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
       const body = url.endsWith("/health")
-        ? { status: "ok", version: "0.1.7", dss: { available: true, message: "ready" } }
+        ? { status: "ok", version: "0.1.8", dss: { available: true, message: "ready" } }
         : metadata
       return {
         ok: true,
@@ -58,11 +58,23 @@ describe("AORC workbench startup", () => {
     expect(container.textContent).not.toContain("Automatic precipitation event separation")
     expect(container.textContent).not.toContain("Rolling maximum")
     expect(container.querySelector("[data-series-table]")).toBeNull()
+    expect(container.querySelector('[data-field="averaging-method"]')).toBeNull()
+    expect(container.textContent).toContain("The AOI mean is area weighted")
     expect(container.querySelectorAll("[data-duration]")).toHaveLength(4)
     expect(container.querySelector('[data-duration="96"]')).not.toBeNull()
     expect(container.querySelector<HTMLSelectElement>('[data-field="cell-size"]')?.textContent)
       .toContain("4000 m")
     expect(container.querySelector("[data-event-chart]")).not.toBeNull()
+    expect(Array.from(container.querySelectorAll(".a2d-page h2")).map(item => item.textContent))
+      .toEqual([
+        "AOI Selection",
+        "AORC Data",
+        "AOI Time Series",
+        "Event Selection",
+        "DSS Export",
+        "Results"
+      ])
+    expect(container.querySelector(".a2d-tabs")?.textContent?.replace(/\s/g, "")).toBe("123456")
     workbench.destroy()
   })
 
@@ -70,7 +82,7 @@ describe("AORC workbench startup", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
       const body = url.endsWith("/health")
-        ? { status: "ok", version: "0.1.7", dss: { available: true, message: "ready" } }
+        ? { status: "ok", version: "0.1.8", dss: { available: true, message: "ready" } }
         : url.endsWith("/animations")
           ? {
               id: "animation-1",
@@ -148,6 +160,18 @@ describe("AORC workbench startup", () => {
       end: "2025-10-27T01:00:00.000Z"
     }
     ;(workbench as any).selectedEventPoints = points
+    const setCursorTime = vi.fn()
+    ;(workbench as any).eventChart = {
+      setCursorTime,
+      destroy: vi.fn()
+    }
+    const timeSliderDock = document.createElement("div")
+    timeSliderDock.className = "maplibregl-time-slider-dock"
+    const markerLabel = document.createElement("div")
+    markerLabel.className = "ts-marker-label"
+    markerLabel.textContent = "2025 Oct 26 23:00"
+    timeSliderDock.appendChild(markerLabel)
+    document.body.appendChild(timeSliderDock)
     expect(activatePlugin).not.toHaveBeenCalled()
     await (workbench as any).createEventAnimation()
 
@@ -165,12 +189,19 @@ describe("AORC workbench startup", () => {
       bounds: [-90, 35, -89, 36]
     })
     expect(config.sources[0].url).toContain("{date:YYYY-MM-DD-HH}")
+    expect(config.onChange).toBeUndefined()
+    markerLabel.textContent = "2025 Oct 27 01:00"
+    await Promise.resolve()
+    expect(setCursorTime).toHaveBeenLastCalledWith("2025-10-27T01:00:00Z")
     const frameRequests = (globalThis.fetch as any).mock.calls
       .map((call: any[]) => String(call[0]))
       .filter((url: string) => url.endsWith(".tif"))
     expect(frameRequests).toHaveLength(2)
     expect(container.querySelector("[data-animation-status]")?.textContent)
       .toContain("Time Slider animation is ready to play")
+    expect(container.querySelector<HTMLElement>("[data-animation-legend]")?.hidden).toBe(false)
+    expect(container.querySelector("[data-animation-legend]")?.textContent)
+      .toContain("Hourly rainfall (in)")
 
     await (workbench as any).renderResults({
       id: "job-1",
@@ -180,7 +211,7 @@ describe("AORC workbench startup", () => {
         pathnames: [],
         dss_file: "C:\\output\\event.dss",
         visualization: {
-          colormap: "blues",
+          colormap: "gist_ncar",
           rescale_min: 0,
           rescale_max: 2.5,
           nodata: -9999
@@ -191,7 +222,7 @@ describe("AORC workbench startup", () => {
       "AORC event summary",
       expect.stringContaining("event_summary.tif"),
       expect.objectContaining({
-        colormap: "blues",
+        colormap: "gist_ncar",
         rescaleMin: 0,
         rescaleMax: 2.5,
         nodata: -9999
