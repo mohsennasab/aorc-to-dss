@@ -1,6 +1,6 @@
 {
   "name": "aorctodss-geolibre",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "description": "A GeoLibre plugin for preparing AORC meteorology in HEC-DSS",
   "type": "module",
   "scripts": {

@@ -63,7 +63,7 @@ function validState(value: unknown): value is Partial<PluginState> {
 export const plugin: GeoLibrePlugin = {
   id: PLUGIN_ID,
   name: "AORCtoDSS",
-  version: "0.1.8",
+  version: "0.2.0",
   activate(app: GeoLibreAppAPI) {
     const open = () => {
       if (!app.openRightPanel?.(PANEL_ID)) {

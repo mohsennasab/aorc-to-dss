@@ -49,6 +49,7 @@ export class AORCWorkbench {
   private timeSliderSearchTimer: number | null = null
   private serviceTimer: number | null = null
   private metadataLoaded = false
+  private dssFilenameCustom = false
   private cleanup: Array<() => void> = []
 
   constructor(
@@ -188,6 +189,7 @@ export class AORCWorkbench {
           <button type="button" data-action="series-csv">Export CSV</button>
         </div>
         <p class="a2d-help">Wheel to zoom. Shift and drag to pan.</p>
+        <h3 data-series-chart-title>AOI area-weighted average</h3>
         <div class="a2d-chart-host" data-chart></div>
         <button type="button" class="a2d-primary" data-next="event" disabled>Continue to Event Selection</button>
       </section>
@@ -221,7 +223,7 @@ export class AORCWorkbench {
           Select an event, then use the button above to preload its animation.
         </div>
         <div class="a2d-animation-legend" hidden data-animation-legend></div>
-        <h3>Selected event time series</h3>
+        <h3 data-event-chart-title>Selected event AOI area-weighted average</h3>
         <div class="a2d-chart-host a2d-event-chart-host" data-event-chart></div>
         <button type="button" class="a2d-primary" data-next="export" disabled>Continue to DSS Export</button>
       </section>
@@ -235,7 +237,7 @@ export class AORCWorkbench {
         <label>Output folder
           <span class="a2d-input-action"><input type="text" data-field="output-dir" placeholder="C:\\AORCtoDSS\\Project"><button type="button" data-action="choose-output">Browse</button></span>
         </label>
-        <label>DSS filename<input type="text" value="aorc_event.dss" data-field="dss-filename"></label>
+        <label>DSS filename<input type="text" placeholder="Generated from event metadata" data-field="dss-filename"></label>
         <label>Watershed or project name<input type="text" value="${this.state.watershed}" data-field="watershed"></label>
         <div class="a2d-two-column">
           <label>SHG cell size
@@ -328,6 +330,7 @@ export class AORCWorkbench {
       this.q<HTMLButtonElement>('[data-next="export"]').disabled = true
       this.showVariable()
       this.updatePathPreview()
+      this.updateDefaultDssFilename()
     })
     this.field<HTMLSelectElement>("unit-system").addEventListener("change", event => {
       this.state.unitSystem = (event.target as HTMLSelectElement).value as PluginState["unitSystem"]
@@ -368,6 +371,11 @@ export class AORCWorkbench {
     this.field<HTMLSelectElement>("cell-size").addEventListener("change", event => {
       this.state.cellSize = Number((event.target as HTMLSelectElement).value)
       this.updatePathPreview()
+      this.updateDefaultDssFilename()
+    })
+    this.field<HTMLInputElement>("dss-filename").addEventListener("input", event => {
+      this.dssFilenameCustom = Boolean((event.target as HTMLInputElement).value.trim())
+      if (!this.dssFilenameCustom) this.updateDefaultDssFilename()
     })
     this.field<HTMLInputElement>("buffer-m").addEventListener("change", event => {
       this.state.bufferM = Number((event.target as HTMLInputElement).value)
@@ -470,6 +478,8 @@ export class AORCWorkbench {
       <dt>Time-series units</dt><dd>${this.escape(this.outputUnit(variable))}</dd>
       <dt>DSS units</dt><dd>${this.escape(this.outputDssUnit(variable))}</dd>
       <dt>Resolution</dt><dd>${this.escape(variable.temporal_resolution)}</dd>
+      <dt>Temporal support</dt><dd>${this.escape(variable.temporal_support ?? (variable.dss_data_type <= 1 ? "interval" : "instantaneous"))}</dd>
+      <dt>Event raster statistic</dt><dd>${this.escape(variable.event_summary_statistic ?? (variable.aggregation === "sum" ? "total" : "mean"))}</dd>
       <dt>Available</dt><dd>${this.escape(variable.start)} through ${this.escape(variable.end)}</dd>
       <dt>Missing value</dt><dd>${variable.missing_value}</dd>
       <dt>Description</dt><dd>${this.escape(variable.description)}</dd>
@@ -641,10 +651,16 @@ export class AORCWorkbench {
 
   private renderSeries(): void {
     const variable = this.selectedVariable()
+    const plotName = this.variablePlotName(variable)
+    const statisticLabel = "AOI area-weighted average"
+    this.q("[data-series-chart-title]").textContent = `${plotName} — AOI Area-Weighted Average`
     const host = this.q<HTMLElement>("[data-chart]")
     this.chart?.destroy()
     this.chart = new TimeSeriesChart(host, {
       units: this.points[0]?.units ?? (variable ? this.outputUnit(variable) : ""),
+      title: `${plotName} — AOI Area-Weighted Average`,
+      statisticLabel,
+      zeroBaseline: variable?.source_name === "APCP_surface",
       onRange: (start, end) => this.setEvent(start, end)
     })
     this.chart.setData(this.points)
@@ -656,10 +672,11 @@ export class AORCWorkbench {
     const rows = ["time,value,units,quality", ...this.points.map(point =>
       [point.time, point.value, point.units, point.quality].map(quote).join(",")
     )]
+    const filename = this.analysisArtifactFilename("csv")
     this.app.exportTextFile?.(
-      "aorc_watershed_timeseries.csv",
+      filename,
       rows.join("\n"),
-      { description: "CSV", extensions: ["csv"], suggestedName: "aorc_watershed_timeseries.csv" }
+      { description: "CSV", extensions: ["csv"], suggestedName: filename }
     )
   }
 
@@ -669,9 +686,10 @@ export class AORCWorkbench {
       return
     }
     try {
+      const filename = this.analysisArtifactFilename("png")
       const result = await this.client.savePng(
         this.chart.pngDataUrl(),
-        "aorc_watershed_timeseries.png"
+        filename
       )
       if (result.path) this.status(`Saved chart image to ${result.path}`)
     } catch (error) {
@@ -708,6 +726,7 @@ export class AORCWorkbench {
     this.animationRevision += 1
     this.clearAnimationPresentation()
     this.event = { start: startTime.toISOString(), end: endTime.toISOString() }
+    this.updateDefaultDssFilename()
     this.field<HTMLInputElement>("event-start").value = forDateTimeInput(this.event.start)
     this.field<HTMLInputElement>("event-end").value = forDateTimeInput(this.event.end)
     const accumulated = this.selectedVariable()?.aggregation === "sum"
@@ -724,17 +743,26 @@ export class AORCWorkbench {
       : values.length
         ? values.reduce((sum, value) => sum + value, 0) / values.length
         : Number.NaN
-    const statisticLabel = accumulated ? "Selected-series sum" : "Selected-series mean"
+    const plotName = this.variablePlotName(this.selectedVariable())
+    const eventAggregateLabel = accumulated
+      ? `Selected AOI area-weighted total ${plotName.toLowerCase()}`
+      : `Selected AOI area-weighted mean ${plotName.toLowerCase()}`
     this.q("[data-event-summary]").innerHTML = `
       <strong>${hours.toLocaleString()} hourly grids</strong>
       <span>${this.escape(this.event.start)} through ${this.escape(this.event.end)}</span>
-      <span>${statisticLabel}: ${Number.isFinite(statistic) ? statistic.toFixed(3) : "not available"} ${this.escape(this.points[0]?.units ?? "")}</span>
+      <span>${eventAggregateLabel}: ${Number.isFinite(statistic) ? statistic.toFixed(3) : "not available"} ${this.escape(this.points[0]?.units ?? "")}</span>
       <span>Source time zone: UTC. DSS time zone: UTC.</span>
     `
     const host = this.q<HTMLElement>("[data-event-chart]")
+    const statisticLabel = "AOI area-weighted average"
+    this.q("[data-event-chart-title]").textContent =
+      `Selected Event ${plotName} — AOI Area-Weighted Average`
     this.eventChart?.destroy()
     this.eventChart = new TimeSeriesChart(host, {
-      units: this.points[0]?.units ?? ""
+      units: this.points[0]?.units ?? "",
+      title: `Selected Event ${plotName} — AOI Area-Weighted Average`,
+      statisticLabel,
+      zeroBaseline: this.selectedVariable()?.source_name === "APCP_surface"
     })
     this.eventChart.setData(selectedPoints)
     const animationButton = this.q<HTMLButtonElement>('[data-action="create-animation"]')
@@ -794,10 +822,15 @@ export class AORCWorkbench {
       })
       if (revision !== this.animationRevision) return
       const animationLegend = this.q<HTMLElement>("[data-animation-legend]")
+      const selectedVariable = this.selectedVariable()
+      const plotName = this.variablePlotName(selectedVariable)
+      const isInterval = selectedVariable?.temporal_support === "interval"
+        || (selectedVariable?.dss_data_type ?? 2) <= 1
+      const temporalLabel = isInterval ? "hour ending" : "instantaneous"
       animationLegend.hidden = false
       animationLegend.innerHTML = `
-        <strong>Hourly rainfall (${this.escape(registration.units)})</strong>
-        <div class="a2d-rainfall-gradient" aria-hidden="true"></div>
+        <strong>Hourly ${this.escape(plotName)} (${this.escape(registration.units)}) — ${temporalLabel}; AOI chart is area weighted</strong>
+        <div class="${this.state.variable === "APCP_surface" ? "a2d-rainfall-gradient" : "a2d-variable-gradient"}" aria-hidden="true"></div>
         <div class="a2d-animation-legend-values">
           <span>${this.formatLegendValue(registration.rescale[0], registration.rescale[1])}</span>
           <span>${this.formatLegendValue((registration.rescale[0] + registration.rescale[1]) / 2, registration.rescale[1])}</span>
@@ -1020,7 +1053,9 @@ export class AORCWorkbench {
           result.pathname_inventory,
           result.grid_metadata,
           result.validation_report,
-          result.cog_file
+          result.cog_file,
+          result.animation_file,
+          result.zarr_store
         ].filter(Boolean).map((path: string) => `<li>${this.escape(path)}</li>`).join("")}
       </ul>
       <h3>Validation checks</h3>
@@ -1039,8 +1074,9 @@ export class AORCWorkbench {
       })
     })
     try {
-      const cogUrl = this.client.fileUrl(job.id, "event_summary.tif")
-      await this.app.addCogLayer?.("AORC event summary", cogUrl, {
+      const relativeCog = result.visualization?.cog_relative_path ?? this.relativeOutputPath(result.cog_file, result.output_dir)
+      const cogUrl = this.client.fileUrl(job.id, relativeCog)
+      await this.app.addCogLayer?.(result.visualization?.layer_name ?? "AORC event summary", cogUrl, {
         colormap: result.visualization?.colormap ?? "gist_ncar",
         rescaleMin: result.visualization?.rescale_min ?? 0,
         rescaleMax: result.visualization?.rescale_max ?? 1,
@@ -1125,6 +1161,72 @@ export class AORCWorkbench {
 
   private selectedVariable(): VariableMetadata | undefined {
     return this.variables.find(variable => variable.source_name === this.state.variable)
+  }
+
+  private variablePlotName(variable?: VariableMetadata): string {
+    const names: Record<string, string> = {
+      APCP_surface: "Precipitation",
+      TMP_2maboveground: "Air Temperature",
+      SPFH_2maboveground: "Specific Humidity",
+      DLWRF_surface: "Downward Longwave Radiation Flux",
+      DSWRF_surface: "Downward Shortwave Radiation Flux",
+      PRES_surface: "Surface Air Pressure",
+      UGRD_10maboveground: "Eastward Wind Component at 10 m",
+      VGRD_10maboveground: "Northward Wind Component at 10 m"
+    }
+    return variable ? names[variable.source_name] ?? variable.display_name : "AORC Variable"
+  }
+
+  private defaultDssFilename(): string {
+    if (!this.event) return ""
+    const start = new Date(this.event.start)
+    const end = new Date(this.event.end)
+    const stamp = start.toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "t") + "z"
+    const hours = Math.round((end.getTime() - start.getTime()) / 3_600_000).toString().padStart(3, "0")
+    const resolution = this.state.cellSize % 1000 === 0
+      ? `${this.state.cellSize / 1000}k`
+      : `${this.state.cellSize}m`
+    return `aorc_${stamp}_${hours}h_shg${resolution}_${this.variableFilenameTerm()}.dss`
+  }
+
+  private variableFilenameTerm(): string {
+    const variableNames: Record<string, string> = {
+      APCP_surface: "precipitation",
+      TMP_2maboveground: "air_temperature",
+      SPFH_2maboveground: "specific_humidity",
+      DLWRF_surface: "downward_longwave_radiation_flux",
+      DSWRF_surface: "downward_shortwave_radiation_flux",
+      PRES_surface: "surface_air_pressure",
+      UGRD_10maboveground: "eastward_wind_component_10m",
+      VGRD_10maboveground: "northward_wind_component_10m"
+    }
+    return variableNames[this.state.variable]
+      ?? (this.selectedVariable()?.display_name || this.state.variable)
+        .toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+  }
+
+  private analysisArtifactFilename(extension: "csv" | "png"): string {
+    const start = new Date(this.state.start)
+    const end = new Date(this.state.end)
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) {
+      return `aorc_aoi_area_weighted_average_${this.variableFilenameTerm()}.${extension}`
+    }
+    const stamp = start.toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "t") + "z"
+    const hours = Math.round((end.getTime() - start.getTime()) / 3_600_000).toString().padStart(3, "0")
+    return `aorc_${stamp}_${hours}h_aoi_area_weighted_average_${this.variableFilenameTerm()}.${extension}`
+  }
+
+  private updateDefaultDssFilename(): void {
+    if (this.dssFilenameCustom) return
+    this.field<HTMLInputElement>("dss-filename").value = this.defaultDssFilename()
+  }
+
+  private relativeOutputPath(path: string, root: string): string {
+    const normalizedPath = String(path).replaceAll("\\", "/")
+    const normalizedRoot = String(root).replaceAll("\\", "/").replace(/\/+$/, "")
+    return normalizedPath.startsWith(`${normalizedRoot}/`)
+      ? normalizedPath.slice(normalizedRoot.length + 1)
+      : normalizedPath.split("/").pop() ?? normalizedPath
   }
 
   private outputUnit(variable: VariableMetadata): string {

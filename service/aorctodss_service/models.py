@@ -26,10 +26,21 @@ class VariableMetadata:
     dss_units: str
     dss_data_type: int
 
+    @property
+    def is_interval(self) -> bool:
+        """Return whether each value represents an hourly interval."""
+
+        return self.dss_data_type in (0, 1)
+
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-ready mapping."""
 
-        return asdict(self)
+        payload = asdict(self)
+        payload["temporal_support"] = "interval" if self.is_interval else "instantaneous"
+        payload["event_summary_statistic"] = (
+            "total" if self.aggregation == "sum" else "mean"
+        )
+        return payload
 
 
 @dataclass(frozen=True)

@@ -17,7 +17,7 @@ export class RainfallLegendControl implements MapControl {
       (_, index) => this.minimum + (this.maximum - this.minimum) * index / 5
     )
     container.innerHTML = `
-      <strong>Hourly rainfall (${this.escape(this.units)})</strong>
+      <strong>Hourly precipitation (${this.escape(this.units)})</strong>
       <div class="a2d-rainfall-gradient" aria-hidden="true"></div>
       <div class="a2d-rainfall-values">
         ${values.map(value => `<span>${this.format(value)}</span>`).join("")}

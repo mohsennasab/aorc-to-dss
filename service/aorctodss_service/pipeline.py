@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Event
@@ -25,6 +26,7 @@ from .dss.pathname import DSSPathname
 from .dss.validator import validate_dss
 from .events.selection import custom_event
 from .models import ProcessingResult
+from .naming import output_layout, variable_names
 from .outputs import (
     validation_payload,
     write_json,
@@ -45,13 +47,14 @@ from .spatial.shg import (
     build_shg_grid,
     grid_estimates,
 )
+from .presentation import EventGif
 from .units import convert_points, convert_values, output_units
 
 Progress = Callable[[float, str], None]
 
 
-def _event_source_range(start: Any, end: Any, aggregation: str) -> tuple[Any, Any]:
-    if aggregation == "sum":
+def _event_source_range(start: Any, end: Any, interval: bool) -> tuple[Any, Any]:
+    if interval:
         return start + timedelta(hours=1), end + timedelta(hours=1)
     return start, end
 
@@ -98,6 +101,19 @@ def _write_animation_zarr(
     animation_data.to_zarr(target, mode="w", consolidated=True)
 
 
+def _promote_zarr_store(partial: Path, target: Path) -> None:
+    """Promote a completed store with brief Windows/OneDrive lock retries."""
+
+    for attempt in range(10):
+        try:
+            partial.replace(target)
+            return
+        except PermissionError:
+            if attempt == 9:
+                raise
+            time.sleep(0.25 * (attempt + 1))
+
+
 def estimate_export(payload: dict[str, Any]) -> dict[str, Any]:
     """Estimate grid dimensions and storage before processing."""
 
@@ -129,7 +145,23 @@ def run_export(
     catalog = catalog or AORCCatalog()
     output_dir = Path(payload["output_dir"]).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    processing_log = output_dir / "processing.log"
+    summary = prepare_geometry(
+        payload["geometry"],
+        payload.get("source_crs", "EPSG:4326"),
+        bool(payload.get("dissolve", True)),
+    )
+    event = custom_event(payload["event_start"], payload["event_end"])
+    metadata = catalog.variable(payload["variable"])
+    cell_size = int(payload.get("cell_size", 2000))
+    layout = output_layout(
+        output_dir,
+        event,
+        cell_size,
+        metadata,
+        payload.get("dss_filename"),
+    )
+    processing_log = layout.processing_log
+    processing_log.parent.mkdir(parents=True, exist_ok=True)
     handler = logging.FileHandler(processing_log, mode="w", encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logger = logging.getLogger(f"aorctodss.{id(cancel)}")
@@ -138,34 +170,29 @@ def run_export(
     logger.propagate = False
     try:
         progress(0.01, "Validating area and event")
-        summary = prepare_geometry(
-            payload["geometry"],
-            payload.get("source_crs", "EPSG:4326"),
-            bool(payload.get("dissolve", True)),
-        )
-        event = custom_event(payload["event_start"], payload["event_end"])
-        metadata = catalog.variable(payload["variable"])
         units = output_units(metadata, payload.get("unit_system", "metric"))
         request_grid = build_shg_grid(
             summary.geometry,
-            int(payload.get("cell_size", 2000)),
+            cell_size,
             float(payload.get("buffer_m", 0)),
         )
         source_start, source_end = _event_source_range(
             event.start,
             event.end,
-            metadata.aggregation,
+            metadata.is_interval,
         )
         bounds = _output_bounds_wgs84(request_grid)
         logger.info("AOI area %.3f sq km", summary.area_sq_km)
         logger.info("Event %s to %s UTC", event.start.isoformat(), event.end.isoformat())
-        dss_file = output_dir / payload.get("dss_filename", "aorc_event.dss")
+        dss_file = layout.dss_file
+        dss_file.parent.mkdir(parents=True, exist_ok=True)
         if dss_file.exists() and not bool(payload.get("overwrite", False)):
             raise FileExistsError(
                 f"{dss_file} exists. Enable overwrite or choose a different filename."
             )
-        zarr_store = output_dir / "event_frames.zarr"
-        zarr_partial = output_dir / ".event_frames.zarr.partial"
+        zarr_store = layout.zarr_store
+        zarr_partial = layout.zarr_partial
+        zarr_store.parent.mkdir(parents=True, exist_ok=True)
         if zarr_partial.exists():
             shutil.rmtree(zarr_partial)
         reuse_zarr = False
@@ -220,7 +247,7 @@ def run_export(
                     "aorctodss_role": "temporary event animation subset",
                 },
             )
-            zarr_partial.replace(zarr_store)
+            _promote_zarr_store(zarr_partial, zarr_store)
         data = xr.open_zarr(zarr_store, consolidated=True)[metadata.source_name]
         raster_geometry = buffered_geometry_wgs84(
             summary.geometry,
@@ -248,19 +275,20 @@ def run_export(
             metadata.missing_value,
             metadata.units,
             "area-weighted",
-            output_dir / ".weights",
+            layout.weights_dir,
             cancel,
             lambda value, message: progress(0.22 + value * 0.13, message),
         )
         points = convert_points(points, metadata.units, units)
         progress(0.35, "Preparing area-weighted SHG validation")
         validation_weights = shg_area_weights(summary.geometry, grid)
-        timeseries_file = write_timeseries_csv(output_dir / "watershed_timeseries.csv", points)
+        timeseries_file = write_timeseries_csv(layout.timeseries_csv, points)
         timeseries_parquet = write_timeseries_parquet(
-            output_dir / "watershed_timeseries.parquet",
+            layout.timeseries_parquet,
             points,
         )
-        aoi_file = output_dir / "study_area.gpkg"
+        aoi_file = layout.aoi_file
+        aoi_file.parent.mkdir(parents=True, exist_ok=True)
         gpd.GeoDataFrame(
             [{"source_features": summary.feature_count, "area_sq_km": summary.area_sq_km}],
             geometry=[summary.geometry],
@@ -274,6 +302,17 @@ def run_export(
         projected_means: list[float] = []
         summary_grid = np.zeros((grid.height, grid.width), dtype=np.float64)
         summary_count = np.zeros((grid.height, grid.width), dtype=np.uint32)
+        event_gif = EventGif(
+            layout.animation_file,
+            metadata,
+            units.display,
+            points,
+            event,
+            grid.cell_size,
+            payload.get("dataset_version", "AORC-V1.1"),
+            validation_weights > 0,
+            float(payload.get("buffer_m", 0)),
+        )
         progress(0.36, "Creating the SHG DSS file")
         with HecDssAdapter(dss_file) as adapter:
             for index, (timestamp, values) in enumerate(
@@ -307,7 +346,8 @@ def run_export(
                 summary_count[valid] += 1
                 unix_seconds = int(np.datetime64(timestamp, "s").astype(np.int64))
                 source_time = datetime.fromtimestamp(unix_seconds, tz=timezone.utc)
-                if metadata.aggregation == "sum":
+                event_gif.add_frame(values, source_time, index)
+                if metadata.is_interval:
                     interval_end = source_time
                     interval_start = interval_end - timedelta(hours=1)
                     interval = True
@@ -372,7 +412,7 @@ def run_export(
             "crs": "EPSG:5070",
         }
         cog_file = write_cog(
-            output_dir / "event_summary.tif",
+            layout.cog_file,
             summary_grid,
             grid,
             units.dss,
@@ -380,7 +420,12 @@ def run_export(
             transparent_zero=metadata.source_name == "APCP_surface",
             colormap=visualization["colormap"],
         )
-        progress(0.75, "Reading the DSS file back for validation")
+        summary_label = variable_names(metadata).summary.replace("_", " ").title()
+        visualization["layer_name"] = f"AORC {summary_label}"
+        visualization["cog_relative_path"] = cog_file.relative_to(output_dir).as_posix()
+        progress(0.77, "Creating the presentation animation")
+        animation_file = event_gif.save()
+        progress(0.79, "Reading the DSS file back for validation")
         checks = validate_dss(
             dss_file,
             pathnames,
@@ -391,11 +436,13 @@ def run_export(
             source_means,
             projected_means,
             validation_weights,
+            metadata.aggregation,
         )
-        pathname_inventory = write_json(output_dir / "dss_pathnames.json", pathnames)
+        pathname_inventory = write_json(layout.pathname_inventory, pathnames)
         grid_metadata = write_json(
-            output_dir / "grid_metadata.json",
+            layout.grid_metadata,
             {
+                "artifact_identifier": layout.identifier,
                 "grid": {
                     "cell_size": grid.cell_size,
                     "bounds": [grid.min_x, grid.min_y, grid.max_x, grid.max_y],
@@ -423,12 +470,13 @@ def run_export(
             },
         )
         validation_report = write_json(
-            output_dir / "validation_report.json",
+            layout.validation_report,
             validation_payload(checks),
         )
         event_summary = write_json(
-            output_dir / "event_summary.json",
+            layout.event_summary,
             {
+                "artifact_identifier": layout.identifier,
                 "event_start_utc": event.start.isoformat(),
                 "event_end_utc": event.end.isoformat(),
                 "hours": event.hours,
@@ -441,6 +489,22 @@ def run_export(
                 "watershed": payload.get("watershed", "WATERSHED"),
                 "aoi_geometry": json.loads(to_geojson(summary.geometry)),
                 "output_statistic": statistic,
+                "variable_naming": variable_names(metadata).__dict__,
+                "artifacts": {
+                    "dss": str(dss_file),
+                    "summary_raster": str(cog_file),
+                    "aoi_timeseries_csv": str(timeseries_file),
+                    "aoi_timeseries_parquet": str(timeseries_parquet),
+                    "study_area": str(aoi_file),
+                    "presentation_animation": str(animation_file),
+                    "event_summary": str(layout.event_summary),
+                    "dss_pathnames": str(pathname_inventory),
+                    "shg_grid_metadata": str(grid_metadata),
+                    "validation_report": str(validation_report),
+                    "download_log": str(layout.download_log),
+                    "processing_log": str(processing_log),
+                    "event_zarr_cache": str(zarr_store),
+                },
                 "processing": {
                     "timeseries_averaging": "area-weighted",
                     "source_clip_all_touched": True,
@@ -451,7 +515,8 @@ def run_export(
                 },
             },
         )
-        download_log = output_dir / "download.log"
+        download_log = layout.download_log
+        download_log.parent.mkdir(parents=True, exist_ok=True)
         download_log.write_text(
             "AORC data were read by chunk from the public annual Zarr stores.\n"
             f"Source window: {source_start.isoformat()} to {source_end.isoformat()}\n"
@@ -473,7 +538,7 @@ def run_export(
             grid_metadata=grid_metadata,
             validation_report=validation_report,
             cog_file=cog_file,
-            animation_file=None,
+            animation_file=animation_file,
             zarr_store=zarr_store,
             visualization=visualization,
             pathnames=pathnames,

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0
+
+- Use variable-aware artifact names, including cumulative precipitation and event-mean terms
+- Generate default DSS names from event start, duration, SHG resolution, and selected variable
+- Organize deliverables into DSS, raster, time-series, spatial, animation, metadata, log, and cache folders
+- Export a presentation-ready GIF with a white layout, black text, an explicit AOI boundary, AORCtoDSS website branding, hourly SHG maps, and a synchronized AOI-average time-series marker
+- Label every in-plugin and exported chart with the selected variable and `AOI Area-Weighted Average` statistic
+- Use variable-specific Time Slider legends and precipitation or Viridis color ramps as appropriate
+- Report event totals for accumulated precipitation and event means for temperature and other meteorological variables
+- Distinguish hourly interval records from instantaneous records in metadata and DSS pathnames
+- Write radiation flux as hourly period-average DSS records while retaining instantaneous support for temperature, humidity, pressure, and wind
+- Shorten internal cache paths to remain reliable under deeply nested Windows and OneDrive output folders
+- Retry completed Zarr-store promotion when Windows temporarily retains a file handle
+- Add full DSS, COG, time-series, GeoPackage, metadata, cache, and GIF integration coverage for all eight supported AORC variables
+- Validate a live 72-hour Upper Tennessee temperature export against the manual DSS baseline: all eight internal checks passed; 71 shared valid times had 0.0319 degrees C MAE, 0.0025 degrees C mean bias, and 0.9982 correlation
+
 ## 0.1.8
 
 - Use `all_touched=True` source clipping with nearest-neighbor SHG reprojection

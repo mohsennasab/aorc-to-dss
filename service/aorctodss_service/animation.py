@@ -77,7 +77,7 @@ class AnimationManager:
         event = custom_event(payload["event_start"], payload["event_end"])
         metadata = self.catalog.variable(payload["variable"])
         units = output_units(metadata, payload.get("unit_system", "metric"))
-        offset = 1 if metadata.aggregation == "sum" else 0
+        offset = 1 if metadata.is_interval else 0
         times = [
             event.start + timedelta(hours=index + offset)
             for index in range(event.hours)

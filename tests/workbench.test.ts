@@ -33,7 +33,7 @@ describe("AORC workbench startup", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
       const body = url.endsWith("/health")
-        ? { status: "ok", version: "0.1.8", dss: { available: true, message: "ready" } }
+        ? { status: "ok", version: "0.2.0", dss: { available: true, message: "ready" } }
         : metadata
       return {
         ok: true,
@@ -82,7 +82,7 @@ describe("AORC workbench startup", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
       const body = url.endsWith("/health")
-        ? { status: "ok", version: "0.1.8", dss: { available: true, message: "ready" } }
+        ? { status: "ok", version: "0.2.0", dss: { available: true, message: "ready" } }
         : url.endsWith("/animations")
           ? {
               id: "animation-1",
@@ -159,6 +159,11 @@ describe("AORC workbench startup", () => {
       start: "2025-10-26T23:00:00.000Z",
       end: "2025-10-27T01:00:00.000Z"
     }
+    ;(workbench as any).updateDefaultDssFilename()
+    expect(container.querySelector<HTMLInputElement>('[data-field="dss-filename"]')?.value)
+      .toBe("aorc_20251026t2300z_002h_shg2k_precipitation.dss")
+    expect((workbench as any).analysisArtifactFilename("csv"))
+      .toBe("aorc_20251026t2300z_002h_aoi_area_weighted_average_precipitation.csv")
     ;(workbench as any).selectedEventPoints = points
     const setCursorTime = vi.fn()
     ;(workbench as any).eventChart = {
@@ -201,7 +206,9 @@ describe("AORC workbench startup", () => {
       .toContain("Time Slider animation is ready to play")
     expect(container.querySelector<HTMLElement>("[data-animation-legend]")?.hidden).toBe(false)
     expect(container.querySelector("[data-animation-legend]")?.textContent)
-      .toContain("Hourly rainfall (in)")
+      .toContain("Hourly Precipitation (in)")
+    expect(container.querySelector("[data-animation-legend]")?.textContent)
+      .toContain("AOI chart is area weighted")
 
     await (workbench as any).renderResults({
       id: "job-1",
@@ -210,6 +217,7 @@ describe("AORC workbench startup", () => {
         output_dir: "C:\\output",
         pathnames: [],
         dss_file: "C:\\output\\event.dss",
+        cog_file: "C:\\output\\rasters\\aorc_summary.tif",
         visualization: {
           colormap: "gist_ncar",
           rescale_min: 0,
@@ -220,7 +228,7 @@ describe("AORC workbench startup", () => {
     })
     expect(addCogLayer).toHaveBeenLastCalledWith(
       "AORC event summary",
-      expect.stringContaining("event_summary.tif"),
+      expect.stringContaining("rasters/aorc_summary.tif"),
       expect.objectContaining({
         colormap: "gist_ncar",
         rescaleMin: 0,

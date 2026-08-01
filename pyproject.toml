@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aorctodss-service"
-version = "0.1.8"
+version = "0.2.0"
 description = "Local AORC and HEC-DSS processing service for GeoLibre"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -15,6 +15,7 @@ dependencies = [
   "hecdss>=0.1.29,<0.2",
   "numpy>=2.0,<3",
   "pandas>=2.2,<3",
+  "pillow>=11,<13",
   "pyarrow>=17,<22",
   "pyproj>=3.6,<4",
   "rasterio>=1.3,<2",

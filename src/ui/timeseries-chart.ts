@@ -2,6 +2,9 @@ import type { TimeSeriesPoint } from "../types"
 
 interface ChartOptions {
   units: string
+  title: string
+  statisticLabel: string
+  zeroBaseline?: boolean
   onRange?: (start: string, end: string) => void
 }
 
@@ -25,7 +28,7 @@ export class TimeSeriesChart {
     if (!context) throw new Error("Canvas is not available")
     this.context = context
     this.canvas.className = "a2d-chart-canvas"
-    this.canvas.setAttribute("aria-label", `Watershed time series in ${options.units}`)
+    this.canvas.setAttribute("aria-label", `${options.title}, ${options.statisticLabel} in ${options.units}`)
     this.tooltip.className = "a2d-chart-tooltip"
     container.classList.add("a2d-chart")
     container.append(this.canvas, this.tooltip)
@@ -89,7 +92,7 @@ export class TimeSeriesChart {
   private dimensions(): { width: number; height: number; left: number; top: number; plotWidth: number; plotHeight: number } {
     const width = this.canvas.clientWidth
     const height = this.canvas.clientHeight
-    return { width, height, left: 88, top: 16, plotWidth: width - 104, plotHeight: height - 58 }
+    return { width, height, left: 104, top: 58, plotWidth: width - 120, plotHeight: height - 100 }
   }
 
   private visible(): Array<{ point: TimeSeriesPoint; time: number }> {
@@ -106,14 +109,30 @@ export class TimeSeriesChart {
     ctx.fillRect(0, 0, width, height)
     const visible = this.visible()
     const values = visible.flatMap(item => item.point.value === null ? [] : [item.point.value])
-    const minValue = values.length ? Math.min(0, ...values) : 0
-    const maxValue = values.length ? Math.max(...values) : 1
+    const rawMin = values.length ? Math.min(...values) : 0
+    const rawMax = values.length ? Math.max(...values) : 1
+    const padding = Math.max((rawMax - rawMin) * 0.08, Math.abs(rawMax) * 0.01, 1.0e-6)
+    const minValue = this.options.zeroBaseline ? Math.min(0, rawMin) : rawMin - padding
+    const maxValue = rawMax + padding
     const range = maxValue - minValue || 1
     ctx.strokeStyle = "rgba(120, 130, 140, 0.25)"
     ctx.fillStyle = getComputedStyle(this.container).color
     ctx.font = "11px system-ui"
     ctx.lineWidth = 1
     ctx.textAlign = "right"
+    ctx.save()
+    ctx.textAlign = "left"
+    ctx.font = "600 15px system-ui"
+    if (ctx.measureText(this.options.title).width > width - 32) {
+      ctx.font = "600 12px system-ui"
+    }
+    ctx.fillText(this.options.title, 16, 22)
+    ctx.font = "11px system-ui"
+    ctx.fillStyle = "#64748b"
+    ctx.fillText(`${this.options.statisticLabel} (${this.options.units}) · UTC`, 16, 42)
+    ctx.restore()
+    ctx.fillStyle = getComputedStyle(this.container).color
+    ctx.font = "11px system-ui"
     for (let step = 0; step <= 4; step += 1) {
       const y = top + plotHeight * step / 4
       ctx.beginPath()
@@ -188,7 +207,7 @@ export class TimeSeriesChart {
     ctx.translate(16, top + plotHeight / 2)
     ctx.rotate(-Math.PI / 2)
     ctx.textAlign = "center"
-    ctx.fillText(this.options.units, 0, 0)
+    ctx.fillText(`${this.options.statisticLabel} (${this.options.units})`, 0, 0)
     ctx.restore()
   }
 

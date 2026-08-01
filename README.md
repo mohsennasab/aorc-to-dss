@@ -67,7 +67,7 @@ Use this option when the processing service is already installed or is running
 from source.
 
 1. Open **Settings > Manage Plugins > Install from file** in GeoLibre.
-2. Select `AORCtoDSS-plugin-0.1.8.zip`.
+2. Select `AORCtoDSS-plugin-0.2.0.zip`.
 3. Restart GeoLibre.
 4. Activate **AORCtoDSS** from the Plugins menu.
 
@@ -258,7 +258,7 @@ animation frames, and DSS grids.
 | Total precipitation | kg/m^2 | mm | in |
 | Air temperature at 2 m | K | degrees C | degrees F |
 | Specific humidity | kg/kg | kg/kg | kg/kg |
-| Radiation flux | W/m^2 | W/m^2 | W/m^2 |
+| Downward radiation flux | W/m^2 | W/m^2 | W/m^2 |
 | Surface pressure | Pa | Pa | Pa |
 | Wind components | m/s | m/s | m/s |
 
@@ -266,6 +266,21 @@ For water depth, `1 kg/m^2` is equal to `1 mm`.
 
 The temporary event Zarr cache keeps the original AORC values. Converted
 values are used for the displayed series and exported products.
+
+### Temporal meaning and event summaries
+
+| Variable | Hourly DSS support | Event COG statistic |
+| --- | --- | --- |
+| Precipitation | Period cumulative, hour ending at timestamp | Total |
+| Downward longwave and shortwave radiation | Period average, hour ending at timestamp | Mean |
+| Temperature, humidity, pressure, and wind | Instantaneous value at timestamp | Mean |
+
+The interface and exported metadata state both the selected variable and the
+statistic. Time-series plots use titles such as
+`Precipitation — AOI Area-Weighted Average` and
+`Air Temperature — AOI Area-Weighted Average`. Accumulating the precipitation
+series produces the selected AOI total; averaging other selected-event series
+produces the selected AOI event mean.
 
 ### DSS pathname format
 
@@ -278,7 +293,7 @@ Gridded records use:
 Example:
 
 ```text
-/SHG/UPPER TENNESSEE/PRECIP/26OCT2025:2300/27OCT2025:0000/AORC-V1.1/
+/SHG/UPPER TENNESSEE/PRECIP/26OCT2025:2300/26OCT2025:2400/AORC-V1.1/
 ```
 
 | Part | Meaning |
@@ -295,22 +310,54 @@ notation is required by HEC-DSS.
 
 ### Output files
 
-An event export can create:
+Every artifact uses a common event identifier:
 
-- HEC-DSS file
-- Watershed-average CSV
-- Watershed-average Parquet file
-- Study area GeoPackage
-- Event summary JSON
-- Download log
-- Processing log
-- DSS pathname inventory
-- Grid metadata
-- Validation report
-- Event-total or event-mean COG
-- Temporary event Zarr processing cache
+```text
+aorc_<start-UTC>_<duration>_shg<resolution>_<variable>
+```
 
-The Time Slider frames use a separate cache under the local service directory.
+For example, a 48-hour 2 km precipitation event beginning at 03:00 UTC is
+`aorc_20200102t0300z_048h_shg2k_precipitation`. A user-entered DSS filename is
+still honored; otherwise this identifier is the DSS filename.
+
+Summary raster names describe the operation applied over time:
+
+| AORC variable | Variable term | Event raster term |
+| --- | --- | --- |
+| Total precipitation | `precipitation` | `cumulative_precipitation` |
+| Air temperature | `air_temperature` | `mean_air_temperature` |
+| Specific humidity | `specific_humidity` | `mean_specific_humidity` |
+| Downward longwave radiation flux | `downward_longwave_radiation_flux` | `mean_downward_longwave_radiation_flux` |
+| Downward shortwave radiation flux | `downward_shortwave_radiation_flux` | `mean_downward_shortwave_radiation_flux` |
+| Surface air pressure | `surface_air_pressure` | `mean_surface_air_pressure` |
+| Eastward wind component at 10 m | `eastward_wind_component_10m` | `mean_eastward_wind_component_10m` |
+| Northward wind component at 10 m | `northward_wind_component_10m` | `mean_northward_wind_component_10m` |
+
+The selected output folder is organized as follows:
+
+```text
+output/
+  dss/          HEC-DSS event file
+  rasters/      Variable-aware cumulative or mean COG
+  timeseries/   AOI area-weighted-average CSV and Parquet
+  spatial/      Study-area GeoPackage
+  animation/    Presentation GIF with SHG maps and synchronized AOI chart
+  metadata/     Event summary, grid metadata, pathnames, and validation
+  logs/         Processing and NOAA download logs
+  cache/        Reusable event Zarr subset and polygon weights
+```
+
+The GIF uses a white presentation layout with black text and one color scale
+for the whole event. It includes the selected variable, AOI averaging method,
+SHG resolution, event window, UTC frame time, an explicit orange AOI boundary,
+a red marker synchronized with the selected-event time series, and AORCtoDSS
+website branding.
+
+Internal cache names use compact AORC source codes to avoid Windows path-length
+problems. User-facing deliverables retain the complete descriptive names.
+
+The interactive Time Slider frames use a separate cache under the local service
+directory.
 
 ### Troubleshooting
 
@@ -578,7 +625,7 @@ files, memory files, and Markdown files. Inspect the archive before publishing:
 
 ```powershell
 npm run package:plugin
-tar -tf .\release\AORCtoDSS-plugin-0.1.8.zip
+tar -tf .\release\AORCtoDSS-plugin-0.2.0.zip
 ```
 
 The plugin archive should contain:

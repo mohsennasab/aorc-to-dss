@@ -182,6 +182,8 @@ export interface VariableMetadata {
   dss_parameter: string
   dss_units: string
   dss_data_type: number
+  temporal_support?: "interval" | "instantaneous"
+  event_summary_statistic?: "total" | "mean"
 }
 
 export interface TimeSeriesPoint {

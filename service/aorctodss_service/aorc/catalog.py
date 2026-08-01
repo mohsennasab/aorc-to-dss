@@ -40,14 +40,14 @@ VARIABLE_HINTS: dict[str, dict[str, Any]] = {
         "dss_data_type": 2,
     },
     "DLWRF_surface": {
-        "description": "Downward longwave radiation flux at the surface",
+        "description": "Hourly mean downward longwave radiation flux at the surface ending at the timestamp",
         "aggregation": "mean",
         "dss_parameter": "DLWRF",
         "dss_units": "W/M2",
         "dss_data_type": 0,
     },
     "DSWRF_surface": {
-        "description": "Downward shortwave radiation flux at the surface",
+        "description": "Hourly mean downward shortwave radiation flux at the surface ending at the timestamp",
         "aggregation": "mean",
         "dss_parameter": "DSWRF",
         "dss_units": "W/M2",
@@ -78,7 +78,7 @@ VARIABLE_HINTS: dict[str, dict[str, Any]] = {
 
 
 def _request(url: str, timeout: int = 60) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "AORCtoDSS/0.1.8"})
+    request = urllib.request.Request(url, headers={"User-Agent": "AORCtoDSS/0.2.0"})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.read()

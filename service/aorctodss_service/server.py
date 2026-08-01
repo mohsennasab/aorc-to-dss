@@ -46,7 +46,7 @@ class AORCRequestHandler(BaseHTTPRequestHandler):
     manager: JobManager
     animation_manager: AnimationManager
     catalog: AORCCatalog
-    server_version = "AORCtoDSS/0.1.8"
+    server_version = "AORCtoDSS/0.2.0"
     max_body = 12 * 1024 * 1024
 
     def log_message(self, format_string: str, *args: Any) -> None:

@@ -106,6 +106,7 @@ The build collects native and data files from:
 - Rasterio and GDAL
 - PyProj and PROJ
 - Zarr codecs
+- Pillow GIF support
 
 `scripts/build-release.ps1` runs both builds and copies the installer script and
 license into `release`.

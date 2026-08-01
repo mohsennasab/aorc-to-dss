@@ -43,6 +43,7 @@ def validate_dss(
     source_means: list[float],
     projected_means: list[float],
     validation_weights: np.ndarray,
+    aggregation: str = "sum",
 ) -> list[ValidationItem]:
     """Reopen a file and validate record count, metadata, time, and values."""
 
@@ -162,14 +163,22 @@ def validate_dss(
                         ),
                     }
                 )
-            source_total = float(
-                np.sum([value for value in source_means if np.isfinite(value)])
-            )
-            projected_total = float(
-                np.sum([value for value in projected_means if np.isfinite(value)])
-            )
-            event_absolute = abs(projected_total - source_total)
-            event_percent = event_absolute / max(abs(source_total), 1.0e-6) * 100
+            finite_source = [value for value in source_means if np.isfinite(value)]
+            finite_projected = [value for value in projected_means if np.isfinite(value)]
+            if aggregation == "sum":
+                summary_name = "event_total"
+                summary_label = "Event-total"
+                source_summary = float(np.sum(finite_source))
+                projected_summary = float(np.sum(finite_projected))
+            else:
+                summary_name = "event_mean"
+                summary_label = "Event-mean"
+                source_summary = float(np.mean(finite_source)) if finite_source else float("nan")
+                projected_summary = (
+                    float(np.mean(finite_projected)) if finite_projected else float("nan")
+                )
+            event_absolute = abs(projected_summary - source_summary)
+            event_percent = event_absolute / max(abs(source_summary), 1.0e-6) * 100
             max_source_absolute = max(
                 (item["source_to_projected_absolute"] for item in differences),
                 default=0,
@@ -192,7 +201,7 @@ def validate_dss(
                     "Value preservation",
                     status,
                     (
-                        f"Event-total area-weighted difference {event_absolute:.6f} "
+                        f"{summary_label} area-weighted difference {event_absolute:.6f} "
                         f"{units} ({event_percent:.3f}%); maximum hourly absolute "
                         f"difference {max_source_absolute:.6f} {units}; DSS "
                         f"read-back difference {max_dss_difference:.6f}%"
@@ -202,9 +211,9 @@ def validate_dss(
                             "Area-weighted AOI means before and after reprojection"
                         ),
                         "units": units,
-                        "event_total": {
-                            "source_aoi_mean_sum": source_total,
-                            "projected_aoi_mean_sum": projected_total,
+                        summary_name: {
+                            "source_aoi_summary": source_summary,
+                            "projected_aoi_summary": projected_summary,
                             "absolute_difference": event_absolute,
                             "percent_difference": event_percent,
                         },
