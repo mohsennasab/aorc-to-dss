@@ -115,9 +115,7 @@ Inspect the plugin archive before release. It must contain only:
 
 - `plugin.json`
 - `dist/index.js`
-- `dist/index.js.map`
 - `dist/style.css`
-- Public icons
 
 The package script rejects private, working-memory, handoff, and Markdown files.
 

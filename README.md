@@ -36,16 +36,38 @@ The installed and portable versions of GeoLibre are supported. The plugin and
 processing service are installed under the current Windows user profile, so
 administrator access is not required.
 
+### Install from the GeoLibre marketplace
+
+The marketplace installs the GeoLibre plugin. AORCtoDSS also needs its local
+Windows processing service for NOAA downloads, raster work, and HEC-DSS files.
+
+1. Open **Settings > Manage Plugins** in GeoLibre.
+2. Find **AORCtoDSS**, install it, and activate it.
+3. Download `AORCtoDSS-Service.exe` and `install-windows.ps1` from the
+   [GitHub releases page](https://github.com/mohsennasab/aorc-to-dss/releases)
+   and save them in the same folder.
+4. Open PowerShell in that folder and run:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\install-windows.ps1 -ServiceOnly
+   ```
+
+5. Return to the AORCtoDSS panel and select **Retry**.
+
+The `ServiceOnly` option leaves the marketplace-managed plugin in place and
+installs only the companion service and its startup shortcut.
+
 ### Install the packaged release
 
-1. Download the latest Windows release from the
-   [GitHub releases page](https://github.com/mohsennasab/aorc-to-dss/releases).
-2. Extract the release to a local folder.
-3. Right-click `install-windows.ps1` and select **Run with PowerShell**.
-4. Wait for the installer to finish.
-5. Close GeoLibre if it is open.
-6. Start GeoLibre.
-7. Open **Plugins** and activate **AORCtoDSS**.
+1. Download `AORCtoDSS-plugin-0.2.0.zip`, `AORCtoDSS-Service.exe`, and
+   `install-windows.ps1` from the
+   [GitHub releases page](https://github.com/mohsennasab/aorc-to-dss/releases)
+   and save them in the same folder.
+2. Right-click `install-windows.ps1` and select **Run with PowerShell**.
+3. Wait for the installer to finish.
+4. Close GeoLibre if it is open.
+5. Start GeoLibre.
+6. Open **Plugins** and activate **AORCtoDSS**.
 
 The installer places the files in these locations:
 
@@ -571,7 +593,8 @@ The packaged-service check verifies:
 
 Release files are written under `release`. The directory is ignored by Git.
 Upload release files through a GitHub release instead of adding them to source
-control.
+control. Upload `SHA256SUMS.txt` with the package so users can verify the plugin,
+service, and installer downloads.
 
 ### Version updates
 
@@ -631,9 +654,7 @@ tar -tf .\release\AORCtoDSS-plugin-0.2.0.zip
 The plugin archive should contain:
 
 - `plugin.json`
-- `icons/aorctodss.png`
 - `dist/index.js`
-- `dist/index.js.map`
 - `dist/style.css`
 
 Do not place project data, output files, local paths, credentials, or private
@@ -641,6 +662,8 @@ documents in examples, tests, screenshots, logs, or release notes.
 
 More implementation notes are available in
 [docs/development.md](docs/development.md).
+Marketplace packaging and pull-request steps are in
+[docs/marketplace-submission.md](docs/marketplace-submission.md).
 
 ## Known limitations
 

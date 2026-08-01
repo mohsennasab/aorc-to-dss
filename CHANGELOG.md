@@ -2,6 +2,12 @@
 
 ## 0.2.0
 
+- Add clear Windows companion-service setup links when GeoLibre cannot reach the local service
+- Add a service-only installer option for marketplace users so GeoLibre continues to manage the plugin
+- Remove source maps and duplicate icon files from the production plugin archive
+- Document the GeoLibre marketplace packaging, local preview, and pull-request workflow
+- Skip a locked release-service copy when the built and release executables already match
+- Generate SHA-256 checksums for the plugin, service, and installer release files
 - Use variable-aware artifact names, including cumulative precipitation and event-mean terms
 - Generate default DSS names from event start, duration, SHG resolution, and selected variable
 - Organize deliverables into DSS, raster, time-series, spatial, animation, metadata, log, and cache folders

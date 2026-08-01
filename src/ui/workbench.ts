@@ -19,6 +19,10 @@ import { AoiMapController } from "./aoi-map"
 import { RainfallLegendControl } from "./rainfall-legend"
 import { TimeSeriesChart } from "./timeseries-chart"
 
+const RELEASES_URL = "https://github.com/mohsennasab/aorc-to-dss/releases"
+const MARKETPLACE_SETUP_URL =
+  "https://github.com/mohsennasab/aorc-to-dss#install-from-the-geolibre-marketplace"
+
 const DEFAULT_STATE: PluginState = {
   serviceUrl: "http://127.0.0.1:8765",
   aoi: null,
@@ -102,6 +106,14 @@ export class AORCWorkbench {
         <span data-service-label>Checking local processing service</span>
         <button type="button" class="a2d-link-button" data-action="service-retry">Retry</button>
         <button type="button" class="a2d-link-button" data-action="service-settings">Settings</button>
+      </div>
+      <div class="a2d-service-setup" data-service-setup role="note" hidden>
+        <strong>Windows companion service needed</strong>
+        <span>AORCtoDSS uses a local service for NOAA downloads, raster processing, and HEC-DSS files. Install the service from the current release, start it, then select Retry.</span>
+        <div>
+          <button type="button" class="a2d-link-button" data-action="service-download">Get the Windows service</button>
+          <button type="button" class="a2d-link-button" data-action="service-guide">Setup guide</button>
+        </div>
       </div>
       <div class="a2d-progress" hidden data-progress-wrap>
         <div class="a2d-progress-track"><span data-progress-bar></span></div>
@@ -296,6 +308,8 @@ export class AORCWorkbench {
     this.onAction("save-aoi", () => this.saveAoi())
     this.onAction("service-retry", () => void this.initialize())
     this.onAction("service-settings", () => this.editServiceUrl())
+    this.onAction("service-download", () => this.app.openExternalUrl?.(RELEASES_URL))
+    this.onAction("service-guide", () => this.app.openExternalUrl?.(MARKETPLACE_SETUP_URL))
     this.onAction("run-timeseries", () => void this.runTimeseries())
     this.onAction("cancel-job", () => void this.cancelJob())
     this.onAction("chart-reset", () => this.chart?.reset())
@@ -400,16 +414,19 @@ export class AORCWorkbench {
   private async checkHealth(): Promise<boolean> {
     const dot = this.q<HTMLElement>("[data-service-dot]")
     const label = this.q<HTMLElement>("[data-service-label]")
+    const setup = this.q<HTMLElement>("[data-service-setup]")
     try {
       const health = await this.client.health()
+      setup.hidden = true
       dot.className = `a2d-service-dot ${health.dss.available ? "ready" : "warning"}`
       label.textContent = health.dss.available
         ? `Processing service ${health.version} ready`
         : `Service ready. DSS component unavailable: ${health.dss.message}`
       return true
     } catch {
+      setup.hidden = false
       dot.className = "a2d-service-dot warning"
-      label.textContent = "Local service is starting or reconnecting. Retrying automatically."
+      label.textContent = "Local service is starting or is not installed. Retrying automatically."
       return false
     }
   }

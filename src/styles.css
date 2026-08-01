@@ -35,6 +35,26 @@
   flex: 1
 }
 
+.a2d-service-setup {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--a2d-border);
+  background: #fff8e8;
+  color: #332b1f;
+  font-size: 12px
+}
+
+.a2d-service-setup[hidden] {
+  display: none
+}
+
+.a2d-service-setup div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px
+}
+
 .a2d-service-dot {
   width: 9px;
   height: 9px;

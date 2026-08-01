@@ -29,6 +29,39 @@ afterEach(() => {
 })
 
 describe("AORC workbench startup", () => {
+  it("shows service installation help when the companion service is unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new TypeError("Failed to fetch")
+    }))
+    const openExternalUrl = vi.fn()
+    const container = document.createElement("div")
+    document.body.append(container)
+    const workbench = new AORCWorkbench(container, {
+      addGeoJsonLayer: () => "layer",
+      addMapControl: () => true,
+      removeMapControl: () => undefined,
+      openExternalUrl
+    })
+
+    await vi.waitFor(() => {
+      expect(container.querySelector<HTMLElement>("[data-service-setup]")?.hidden).toBe(false)
+    })
+    expect(container.querySelector("[data-service-setup]")?.textContent)
+      .toContain("Windows companion service needed")
+
+    container.querySelector<HTMLButtonElement>('[data-action="service-download"]')?.click()
+    container.querySelector<HTMLButtonElement>('[data-action="service-guide"]')?.click()
+    expect(openExternalUrl).toHaveBeenNthCalledWith(
+      1,
+      "https://github.com/mohsennasab/aorc-to-dss/releases"
+    )
+    expect(openExternalUrl).toHaveBeenNthCalledWith(
+      2,
+      "https://github.com/mohsennasab/aorc-to-dss#install-from-the-geolibre-marketplace"
+    )
+    workbench.destroy()
+  })
+
   it("loads variables automatically and renders the simplified event controls", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = String(input)

@@ -1,3 +1,7 @@
+param(
+    [switch]$ServiceOnly
+)
+
 $ErrorActionPreference = "Stop"
 
 $releaseRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -6,7 +10,7 @@ $pluginArchive = Get-ChildItem -LiteralPath $releaseRoot -Filter "AORCtoDSS-plug
     Select-Object -First 1
 $serviceSource = Join-Path $releaseRoot "AORCtoDSS-Service.exe"
 
-if (-not $pluginArchive) {
+if (-not $ServiceOnly -and -not $pluginArchive) {
     throw "The AORCtoDSS GeoLibre plugin archive is missing"
 }
 if (-not (Test-Path -LiteralPath $serviceSource)) {
@@ -18,7 +22,9 @@ $installDirectory = Join-Path $env:LOCALAPPDATA "AORCtoDSS/bin"
 $startupDirectory = [Environment]::GetFolderPath("Startup")
 $shortcutPath = Join-Path $startupDirectory "AORCtoDSS Service.lnk"
 
-New-Item -ItemType Directory -Path $pluginDirectory -Force | Out-Null
+if (-not $ServiceOnly) {
+    New-Item -ItemType Directory -Path $pluginDirectory -Force | Out-Null
+}
 New-Item -ItemType Directory -Path $installDirectory -Force | Out-Null
 
 $installedPlugin = Join-Path $pluginDirectory "aorctodss.zip"
@@ -59,7 +65,9 @@ if ($remainingProcessIds.Count -gt 0) {
     throw "The installed AORCtoDSS service could not be stopped. Process IDs: $($remainingProcessIds -join ', ')"
 }
 
-Copy-Item -LiteralPath $pluginArchive.FullName -Destination $installedPlugin -Force
+if (-not $ServiceOnly) {
+    Copy-Item -LiteralPath $pluginArchive.FullName -Destination $installedPlugin -Force
+}
 $serviceCopied = $false
 foreach ($attempt in 1..20) {
     try {
@@ -88,5 +96,11 @@ $shortcut.Save()
 
 Start-Process -FilePath $installedService -WorkingDirectory $installDirectory -WindowStyle Hidden
 
-Write-Host "AORCtoDSS was installed for the current user."
-Write-Host "Restart GeoLibre Desktop, then activate AORCtoDSS from the Plugins menu."
+if ($ServiceOnly) {
+    Write-Host "The AORCtoDSS companion service was installed for the current user."
+    Write-Host "Return to GeoLibre and select Retry in the AORCtoDSS panel."
+}
+else {
+    Write-Host "AORCtoDSS was installed for the current user."
+    Write-Host "Restart GeoLibre Desktop, then activate AORCtoDSS from the Plugins menu."
+}

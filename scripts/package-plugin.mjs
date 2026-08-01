@@ -17,6 +17,7 @@ async function collect(directory) {
       continue
     }
     const archivePath = relative(pluginRoot, absolute).split(sep).join("/")
+    if (archivePath.endsWith(".map") || archivePath.startsWith("icons/")) continue
     if (/private|memory|handoff|\.md$/i.test(archivePath)) {
       throw new Error(`Refusing to package private or working file: ${archivePath}`)
     }

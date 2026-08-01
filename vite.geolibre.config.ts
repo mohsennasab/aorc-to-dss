@@ -15,7 +15,7 @@ export default defineConfig({
         assetFileNames: asset => asset.name?.endsWith(".css") ? "style.css" : "[name][extname]"
       }
     },
-    sourcemap: true,
+    sourcemap: false,
     minify: "esbuild"
   }
 })
