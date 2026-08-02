@@ -38,21 +38,27 @@ administrator access is not required.
 
 ### Install from the GeoLibre marketplace
 
+AORCtoDSS is listed in the
+[official GeoLibre plugin marketplace](https://github.com/opengeos/geolibre-plugins).
+See the [GeoLibre plugin guide](https://geolibre.app/user-guide/plugins/) for
+general information about installing and updating marketplace plugins.
+
 The marketplace installs the GeoLibre plugin. AORCtoDSS also needs its local
 Windows processing service for NOAA downloads, raster work, and HEC-DSS files.
 
 1. Open **Settings > Manage Plugins** in GeoLibre.
-2. Find **AORCtoDSS**, install it, and activate it.
-3. Download `AORCtoDSS-Service.exe` and `install-windows.ps1` from the
+2. Search for **AORCtoDSS** and select **Install**.
+3. Open **Plugins > Activate plugin** and select **AORCtoDSS**.
+4. Download `AORCtoDSS-Service.exe` and `install-windows.ps1` from the
    [GitHub releases page](https://github.com/mohsennasab/aorc-to-dss/releases)
    and save them in the same folder.
-4. Open PowerShell in that folder and run:
+5. Open PowerShell in that folder and run:
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\install-windows.ps1 -ServiceOnly
    ```
 
-5. Return to the AORCtoDSS panel and select **Retry**.
+6. Return to the AORCtoDSS panel and select **Retry**.
 
 The `ServiceOnly` option leaves the marketplace-managed plugin in place and
 installs only the companion service and its startup shortcut.
